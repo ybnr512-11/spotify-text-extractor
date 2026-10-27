@@ -3,463 +3,546 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
-<title>Spotify Text Extractor</title>
+<title>Spotify Track OCR</title>
 
 <style>
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
-  margin: 0;
-  padding: 35px 16px;
   background: #121212;
-  color: white;
+  color: #eee;
   font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 24px;
 }
 
-.container {
-  max-width: 900px;
+main {
+  max-width: 1000px;
   margin: auto;
 }
 
-h1 {
-  color: #1DB954;
-  text-align: center;
-}
+h1 { color: #1ed760; }
 
-.subtitle {
-  text-align: center;
-  color: #b3b3b3;
-  line-height: 1.8;
-}
-
-.box {
-  background: #242424;
-  padding: 25px;
-  border-radius: 14px;
-  margin-top: 22px;
-}
-
-.paste-area {
-  border: 2px dashed #1DB954;
+.panel {
+  background: #222;
   border-radius: 12px;
-  padding: 45px 15px;
-  text-align: center;
-  cursor: pointer;
-  background: #191919;
-}
-
-.paste-area:focus {
-  outline: 2px solid #1DB954;
-}
-
-.paste-area h2 {
-  color: #1DB954;
-}
-
-.paste-area p {
-  color: #b3b3b3;
+  padding: 20px;
+  margin: 16px 0;
 }
 
 button {
-  background: #1DB954;
-  color: #000;
-  border: none;
-  padding: 12px 20px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: bold;
-  margin: 6px;
-}
-
-button:hover {
   background: #1ed760;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.secondary {
-  background: #444;
-  color: white;
-}
-
-.secondary:hover {
-  background: #555;
-}
-
-textarea {
-  width: 100%;
-  height: 350px;
-  background: #181818;
-  color: white;
-  padding: 15px;
-  border: 1px solid #444;
+  border: 0;
   border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.8;
-  resize: vertical;
+  padding: 10px 16px;
+  font-weight: bold;
+  cursor: pointer;
+  margin: 5px;
 }
 
-#status {
-  color: #1DB954;
-  text-align: center;
-  min-height: 24px;
-  line-height: 1.6;
+select, input {
+  padding: 9px;
+  background: #333;
+  color: white;
+  border: 1px solid #666;
+  border-radius: 6px;
 }
+
+#drop {
+  border: 2px dashed #1ed760;
+  padding: 30px;
+  text-align: center;
+  border-radius: 10px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th, td {
+  border: 1px solid #555;
+  padding: 8px;
+  text-align: left;
+}
+
+td[contenteditable] {
+  background: #191919;
+}
+
+small, #status { color: #aaa; }
 
 #preview {
   max-width: 100%;
-  max-height: 250px;
-  margin-top: 15px;
-  border-radius: 8px;
+  max-height: 200px;
   display: none;
 }
 
-.actions {
-  text-align: center;
-  margin-top: 15px;
-}
-
-.count {
-  color: #b3b3b3;
-  font-size: 13px;
-}
-
-input[type="file"] {
-  margin-top: 15px;
-  max-width: 100%;
-}
-
-.language-info {
-  background: #191919;
-  border-radius: 8px;
-  padding: 12px;
-  margin-top: 15px;
-  text-align: center;
-  color: #b3b3b3;
-  font-size: 13px;
-  line-height: 1.8;
-}
+.scroll { overflow-x: auto; }
 </style>
 </head>
 
 <body>
+<main>
 
-<div class="container">
+<h1>🎵 Spotify Track OCR</h1>
 
-  <h1>🎵 Spotify Text Extractor</h1>
+<p>
+화면 캡처 → Ctrl + V → 곡명·아티스트·앨범명 추출
+</p>
 
-  <p class="subtitle">
-    스포티파이 화면을 캡처하고 Ctrl + V로 붙여넣으세요.<br>
-    이미지 속 텍스트를 자동으로 추출합니다.
-  </p>
+<section class="panel">
 
-  <div class="box">
+<label>
+인식 언어
+<select id="lang">
+  <option value="jpn+eng">일본어 + 영어</option>
+  <option value="kor+eng">한국어 + 영어</option>
+  <option value="chi_sim+eng">중국어 간체 + 영어</option>
+  <option value="chi_tra+eng">중국어 번체 + 영어</option>
+  <option value="eng+spa">영어 + 스페인어</option>
+  <option value="eng">영어</option>
+</select>
+</label>
 
-    <div
-      class="paste-area"
-      id="pasteArea"
-      tabindex="0"
-    >
-      <h2>📋 Ctrl + V</h2>
-      <p>캡처한 이미지를 여기에 붙여넣으세요.</p>
-      <p>Windows + Shift + S → Ctrl + V</p>
-    </div>
+<p>
+<small>
+Spotify 곡 목록이 보이도록 캡처하세요.
+언어를 바꾸면 다음 이미지부터 적용됩니다.
+</small>
+</p>
 
-    <div class="language-info">
-      🌐 지원 언어<br>
-      한국어 · 영어 · 일본어 · 중국어(간체/번체) · 스페인어
-    </div>
-
-    <div style="text-align:center">
-
-      <input
-        type="file"
-        id="imageUpload"
-        accept="image/*"
-        multiple
-      >
-
-      <br>
-
-      <img
-        id="preview"
-        alt="캡처 이미지 미리보기"
-      >
-
-    </div>
-
-    <p id="status">이미지를 기다리는 중...</p>
-
-  </div>
-
-  <div class="box">
-
-    <h2>🎶 추출된 텍스트</h2>
-
-    <p class="count" id="count">
-      처리한 이미지: 0장
-    </p>
-
-    <textarea
-      id="result"
-      placeholder="추출된 곡명과 아티스트명이 여기에 표시됩니다."
-    ></textarea>
-
-    <div class="actions">
-
-      <button onclick="copyText()">
-        📋 전체 복사
-      </button>
-
-      <button class="secondary" onclick="clearText()">
-        🗑 초기화
-      </button>
-
-    </div>
-
-  </div>
-
+<div id="drop" tabindex="0">
+<strong>📋 여기를 클릭하고 Ctrl + V</strong>
+<p>또는 이미지 선택</p>
+<input id="upload" type="file" accept="image/*" multiple>
 </div>
+
+<p id="status">대기 중</p>
+
+<img id="preview" alt="캡처 미리보기">
+
+</section>
+
+<section class="panel">
+
+<h2>
+추출 결과 <small id="count">0곡</small>
+</h2>
+
+<button id="copy">📋 3열 전체 복사</button>
+<button id="clear">초기화</button>
+
+<div class="scroll">
+<table>
+<thead>
+<tr>
+<th>곡명</th>
+<th>아티스트</th>
+<th>앨범명</th>
+</tr>
+</thead>
+<tbody id="rows"></tbody>
+</table>
+</div>
+
+<p>
+<small>
+셀을 클릭하면 수정할 수 있습니다.
+엑셀에 붙여넣으면 각 항목이 별도 열로 들어갑니다.
+OCR 결과는 반드시 확인하세요.
+</small>
+</p>
+
+</section>
+</main>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <script>
 
-const result = document.getElementById("result");
-const statusText = document.getElementById("status");
-const preview = document.getElementById("preview");
-const imageUpload = document.getElementById("imageUpload");
-const countText = document.getElementById("count");
+const $ = id => document.getElementById(id);
 
-let imageCount = 0;
-let worker = null;
-let processing = false;
+let busy = false;
 let queue = [];
-let generation = 0;
+let workers = {};
+let epoch = 0;
+
+const tracks = [];
 
 
-// Ctrl + V 이미지 붙여넣기
-document.addEventListener("paste", function(event) {
-
-  const items = event.clipboardData?.items;
-
-  if (!items) return;
-
-  const images = [];
-
-  for (const item of items) {
-
-    if (item.type.startsWith("image/")) {
-
-      const file = item.getAsFile();
-
-      if (file) {
-        images.push(file);
-      }
-
-    }
-
-  }
-
-  if (images.length > 0) {
-
-    event.preventDefault();
-
-    addImages(images);
-
-  }
-
-});
-
-
-// 이미지 파일 업로드
-imageUpload.addEventListener("change", function(event) {
-
-  const files = Array.from(event.target.files);
-
-  addImages(files);
-
-  event.target.value = "";
-
-});
-
-
-// 이미지 처리 대기열
-function addImages(files) {
-
-  for (const file of files) {
-
-    if (file.type.startsWith("image/")) {
-      queue.push(file);
-    }
-
-  }
-
-  processQueue();
-
+// 이미지 추가
+function add(files) {
+  queue.push(
+    ...files.filter(f => f.type.startsWith("image/"))
+  );
+  run();
 }
 
 
-// OCR 자동 실행
-async function processQueue() {
+// Ctrl + V
+document.addEventListener("paste", e => {
 
-  if (processing) return;
+  const files = [
+    ...(e.clipboardData?.items || [])
+  ]
+  .filter(i => i.type.startsWith("image/"))
+  .map(i => i.getAsFile())
+  .filter(Boolean);
 
-  processing = true;
+  if (files.length) {
+    e.preventDefault();
+    add(files);
+  }
 
-  const currentGeneration = generation;
+});
+
+
+// 이미지 업로드
+$("upload").onchange = e => {
+  add([...e.target.files]);
+  e.target.value = "";
+};
+
+
+// 텍스트 정리
+function clean(s) {
+  return (s || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+// 결과 표 생성
+function render() {
+
+  const body = $("rows");
+  body.replaceChildren();
+
+  tracks.forEach((t, i) => {
+
+    const tr = document.createElement("tr");
+
+    for (let k = 0; k < 3; k++) {
+
+      const td = document.createElement("td");
+
+      td.contentEditable = "true";
+      td.textContent = t[k];
+
+      td.addEventListener("input", () => {
+        tracks[i][k] = td.textContent;
+      });
+
+      tr.append(td);
+    }
+
+    body.append(tr);
+  });
+
+  $("count").textContent = tracks.length + "곡";
+}
+
+
+// 이미지 영역 확대
+function crop(canvas, x, y, w, h, scale = 3) {
+
+  const out = document.createElement("canvas");
+
+  out.width = Math.max(1, Math.round(w * scale));
+  out.height = Math.max(1, Math.round(h * scale));
+
+  const ctx = out.getContext("2d");
+
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, out.width, out.height);
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  ctx.drawImage(
+    canvas,
+    x, y, w, h,
+    0, 0, out.width, out.height
+  );
+
+  return out;
+}
+
+
+// 이미지 OCR
+async function processImage(file, worker, token) {
+
+  const url = URL.createObjectURL(file);
+
+  let bitmap;
 
   try {
 
-    if (!window.Tesseract) {
-      throw new Error("OCR 라이브러리를 불러오지 못했습니다.");
-    }
+    bitmap = await createImageBitmap(file);
 
-    if (!worker) {
+    const W = bitmap.width;
+    const H = bitmap.height;
 
-      statusText.textContent =
-        "다국어 OCR 준비 중... 첫 실행은 시간이 걸릴 수 있습니다.";
+    const base = document.createElement("canvas");
 
-      // 한국어, 영어, 일본어, 중국어 간체/번체, 스페인어
-      worker = await Tesseract.createWorker(
-        "kor+eng+jpn+chi_sim+chi_tra+spa"
+    base.width = W;
+    base.height = H;
+
+    base.getContext("2d").drawImage(bitmap, 0, 0);
+
+    $("preview").src = url;
+    $("preview").style.display = "block";
+
+    // Spotify 화면의 열 위치
+    const titleX = Math.round(W * 0.155);
+    const titleEnd = Math.round(W * 0.505);
+
+    const albumX = Math.round(W * 0.512);
+    const albumEnd = Math.round(W * 0.735);
+
+    const top = Math.round(H * 0.16);
+    const bottom = Math.round(H * 0.965);
+
+    const height = bottom - top;
+
+
+    // 영역별 OCR
+    async function lines(x, width) {
+
+      const region = crop(
+        base, x, top, width, height, 3
       );
 
+      const response = await worker.recognize(region);
+
+      return (response.data.lines || [])
+        .map(line => ({
+          text: clean(line.text),
+          y: (line.bbox.y0 + line.bbox.y1) / 6 / 3 + top
+        }))
+        .filter(line => line.text);
     }
 
-    while (queue.length > 0) {
 
-      if (currentGeneration !== generation) break;
+    // 곡명 + 아티스트 영역
+    const left = await lines(
+      titleX,
+      titleEnd - titleX
+    );
 
-      const file = queue.shift();
+    if (token !== epoch) return;
 
-      statusText.textContent =
-        "이미지 텍스트 인식 중...";
 
-      // 미리보기
-      const imageURL = URL.createObjectURL(file);
+    // 앨범 영역
+    const albums = await lines(
+      albumX,
+      albumEnd - albumX
+    );
 
-      preview.onload = function() {
-        URL.revokeObjectURL(imageURL);
-      };
+    if (token !== epoch) return;
 
-      preview.src = imageURL;
-      preview.style.display = "inline-block";
 
-      // OCR 실행
-      const response = await worker.recognize(file);
+    // 곡명과 아티스트 묶기
+    const grouped = [];
 
-      if (currentGeneration !== generation) break;
+    for (let i = 0; i < left.length; i++) {
 
-      const extractedText = response.data.text.trim();
+      const line = left[i];
+      const next = left[i + 1];
 
-      if (extractedText) {
+      const nextGap = next
+        ? next.y - line.y
+        : Infinity;
 
-        if (result.value.trim()) {
-          result.value += "\n\n";
+      const approxRow = H * 0.078;
+
+      if (
+        next &&
+        nextGap > 0 &&
+        nextGap < approxRow * 0.45
+      ) {
+
+        grouped.push({
+          title: line.text,
+          artist: next.text,
+          y: line.y
+        });
+
+        i++;
+
+      } else {
+
+        grouped.push({
+          title: line.text,
+          artist: "",
+          y: line.y
+        });
+
+      }
+    }
+
+
+    // 앨범명 연결
+    const used = new Set();
+
+    for (const g of grouped) {
+
+      if (!g.title) continue;
+
+      let best = -1;
+      let distance = Infinity;
+
+      albums.forEach((a, i) => {
+
+        if (used.has(i)) return;
+
+        const delta = Math.abs(a.y - g.y);
+
+        if (delta < distance) {
+          distance = delta;
+          best = i;
         }
 
-        result.value += extractedText;
+      });
+
+      let album = "";
+
+      if (
+        best >= 0 &&
+        distance < H * 0.035
+      ) {
+
+        album = albums[best].text;
+        used.add(best);
 
       }
 
-      imageCount++;
-
-      countText.textContent =
-        "처리한 이미지: " + imageCount + "장";
-
-      statusText.textContent =
-        "✅ " + imageCount + "장 인식 완료";
+      tracks.push([
+        g.title,
+        g.artist,
+        album
+      ]);
 
     }
 
-  } catch (error) {
-
-    statusText.textContent =
-      "오류 발생: " + error.message;
+    render();
 
   } finally {
 
-    processing = false;
-
-    if (queue.length > 0) {
-      processQueue();
-    }
+    bitmap?.close();
+    URL.revokeObjectURL(url);
 
   }
-
 }
 
 
-// 전체 복사
-async function copyText() {
+// OCR 실행
+async function run() {
 
-  if (!result.value.trim()) {
+  if (busy) return;
 
-    alert("복사할 텍스트가 없습니다.");
-
-    return;
-
-  }
+  busy = true;
 
   try {
 
-    await navigator.clipboard.writeText(result.value);
+    while (queue.length) {
 
-    alert("전체 텍스트 복사 완료!");
+      const file = queue.shift();
+      const token = epoch;
+      const lang = $("lang").value;
 
-  } catch (error) {
+      $("status").textContent =
+        "OCR 언어 데이터 준비 및 인식 중...";
 
-    result.focus();
-    result.select();
+      if (!window.Tesseract) {
+        throw Error("OCR 라이브러리를 불러오지 못했습니다.");
+      }
 
-    alert("Ctrl + C를 눌러 복사해 주세요.");
+      if (!workers[lang]) {
+
+        workers[lang] =
+          await Tesseract.createWorker(lang);
+
+      }
+
+      if (token !== epoch) continue;
+
+      await processImage(
+        file,
+        workers[lang],
+        token
+      );
+
+      if (token === epoch) {
+
+        $("status").textContent =
+          "인식 완료! 결과를 확인하세요.";
+
+      }
+
+    }
+
+  } catch (e) {
+
+    $("status").textContent =
+      "오류: " + e.message;
+
+  } finally {
+
+    busy = false;
+
+    if (queue.length) run();
 
   }
-
 }
 
 
 // 초기화
-function clearText() {
+$("clear").onclick = () => {
 
-  generation++;
-
-  result.value = "";
-
-  imageCount = 0;
-
+  epoch++;
   queue = [];
+  tracks.length = 0;
 
-  countText.textContent =
-    "처리한 이미지: 0장";
+  render();
 
-  statusText.textContent =
-    "이미지를 기다리는 중...";
+  $("status").textContent = "초기화됨";
+  $("preview").style.display = "none";
 
-  preview.style.display = "none";
-
-  preview.removeAttribute("src");
-
-}
+};
 
 
-// 페이지 종료 시 OCR 정리
-window.addEventListener("pagehide", function() {
+// 전체 복사
+$("copy").onclick = async () => {
 
-  if (worker) {
-    worker.terminate();
+  if (!tracks.length) {
+    alert("추출 결과가 없습니다.");
+    return;
   }
 
-});
+  const text = tracks
+    .map(t =>
+      t.map(v =>
+        v.replace(/[\t\r\n]+/g, " ")
+      ).join("\t")
+    )
+    .join("\n");
+
+  try {
+
+    await navigator.clipboard.writeText(text);
+
+    alert("복사 완료!");
+
+  } catch {
+
+    alert("복사 권한을 확인해 주세요.");
+
+  }
+
+};
 
 </script>
-
 </body>
 </html>
