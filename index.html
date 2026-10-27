@@ -2,267 +2,458 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spotify Track OCR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotify 곡 목록 추출기</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <style>
-* { box-sizing: border-box; }
-
-body {
-  background: #121212;
-  color: #eee;
-  font-family: Arial, sans-serif;
-  margin: 0;
-  padding: 24px;
+* {
+  box-sizing: border-box;
 }
 
-main {
-  max-width: 1000px;
+body {
+  margin: 0;
+  padding: 25px;
+  background: #121212;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+.container {
+  max-width: 1100px;
   margin: auto;
 }
 
-h1 { color: #1ed760; }
+h1 {
+  color: #1ed760;
+  margin-bottom: 8px;
+}
 
-.panel {
-  background: #222;
+p {
+  color: #bbb;
+  line-height: 1.6;
+}
+
+.box {
+  background: #202020;
   border-radius: 12px;
   padding: 20px;
-  margin: 16px 0;
+  margin-top: 20px;
+}
+
+.upload {
+  border: 2px dashed #1ed760;
+  border-radius: 10px;
+  padding: 30px;
+  text-align: center;
+  cursor: pointer;
 }
 
 button {
   background: #1ed760;
-  border: 0;
-  border-radius: 8px;
-  padding: 10px 16px;
+  color: #111;
+  border: none;
+  border-radius: 7px;
+  padding: 11px 17px;
+  margin: 5px;
   font-weight: bold;
   cursor: pointer;
-  margin: 5px;
 }
 
-select, input {
-  padding: 9px;
-  background: #333;
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondary {
+  background: #444;
   color: white;
-  border: 1px solid #666;
-  border-radius: 6px;
 }
 
-#drop {
-  border: 2px dashed #1ed760;
-  padding: 30px;
-  text-align: center;
-  border-radius: 10px;
+#imageWrap {
+  position: relative;
+  display: none;
+  margin-top: 15px;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid #555;
+}
+
+#canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+#status {
+  color: #1ed760;
+  margin-top: 15px;
+  white-space: pre-wrap;
 }
 
 table {
-  border-collapse: collapse;
   width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
 }
 
 th, td {
-  border: 1px solid #555;
-  padding: 8px;
+  border: 1px solid #444;
+  padding: 10px;
   text-align: left;
 }
 
-td[contenteditable] {
-  background: #191919;
+th {
+  background: #333;
 }
 
-small, #status { color: #aaa; }
+td {
+  background: #181818;
+}
 
-#preview {
-  max-width: 100%;
-  max-height: 200px;
+td[contenteditable="true"]:focus {
+  outline: 2px solid #1ed760;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+small {
+  color: #aaa;
+}
+
+#raw {
+  width: 100%;
+  min-height: 110px;
+  background: #151515;
+  color: #ddd;
+  border: 1px solid #555;
+  padding: 10px;
+  resize: vertical;
+}
+
+#file {
   display: none;
 }
-
-.scroll { overflow-x: auto; }
 </style>
 </head>
 
 <body>
-<main>
 
-<h1>🎵 Spotify Track OCR</h1>
+<div class="container">
 
-<p>
-화면 캡처 → Ctrl + V → 곡명·아티스트·앨범명 추출
-</p>
-
-<section class="panel">
-
-<label>
-인식 언어
-<select id="lang">
-  <option value="jpn+eng">일본어 + 영어</option>
-  <option value="kor+eng">한국어 + 영어</option>
-  <option value="chi_sim+eng">중국어 간체 + 영어</option>
-  <option value="chi_tra+eng">중국어 번체 + 영어</option>
-  <option value="eng+spa">영어 + 스페인어</option>
-  <option value="eng">영어</option>
-</select>
-</label>
+<h1>🎵 Spotify 곡 목록 추출기</h1>
 
 <p>
-<small>
-Spotify 곡 목록이 보이도록 캡처하세요.
-언어를 바꾸면 다음 이미지부터 적용됩니다.
-</small>
+Spotify 화면을 캡처해서 Ctrl + V로 붙여넣거나
+이미지를 업로드하세요.<br>
+한국어 + 영어 인식 / 곡명 · 아티스트 · 앨범명 추출
 </p>
 
-<div id="drop" tabindex="0">
-<strong>📋 여기를 클릭하고 Ctrl + V</strong>
-<p>또는 이미지 선택</p>
-<input id="upload" type="file" accept="image/*" multiple>
+<div class="box">
+
+  <div class="upload" id="uploadArea">
+    <h3>📋 Ctrl + V로 이미지 붙여넣기</h3>
+    <p>또는 클릭해서 이미지 선택</p>
+    <input type="file" id="file" accept="image/*" multiple>
+  </div>
+
+  <p>
+    <strong>영역 선택 방법</strong><br>
+    이미지에서 곡 목록의 첫 번째 곡부터 마지막 곡까지
+    마우스로 드래그하세요.<br>
+    번호와 추가한 날짜는 선택하지 않는 것이 좋습니다.
+  </p>
+
+  <div id="imageWrap">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div>
+    <button id="recognize">선택 영역 추출</button>
+    <button id="full" class="secondary">전체 이미지 추출</button>
+    <button id="resetSelection" class="secondary">영역 다시 선택</button>
+  </div>
+
+  <div id="status">이미지를 넣어주세요.</div>
+
 </div>
 
-<p id="status">대기 중</p>
+<div class="box">
 
-<img id="preview" alt="캡처 미리보기">
+  <h2>추출 결과 <span id="count">0곡</span></h2>
 
-</section>
+  <button id="copy">📋 엑셀용 전체 복사</button>
+  <button id="clear" class="secondary">결과 초기화</button>
 
-<section class="panel">
+  <div class="tableWrap">
+    <table>
+      <thead>
+        <tr>
+          <th>곡명</th>
+          <th>아티스트</th>
+          <th>앨범명</th>
+        </tr>
+      </thead>
+      <tbody id="result"></tbody>
+    </table>
+  </div>
 
-<h2>
-추출 결과 <small id="count">0곡</small>
-</h2>
+  <p>
+    <small>
+      인식 결과가 틀리면 표의 글자를 클릭해 직접 수정할 수 있습니다.
+    </small>
+  </p>
 
-<button id="copy">📋 3열 전체 복사</button>
-<button id="clear">초기화</button>
-
-<div class="scroll">
-<table>
-<thead>
-<tr>
-<th>곡명</th>
-<th>아티스트</th>
-<th>앨범명</th>
-</tr>
-</thead>
-<tbody id="rows"></tbody>
-</table>
 </div>
 
-<p>
-<small>
-셀을 클릭하면 수정할 수 있습니다.
-엑셀에 붙여넣으면 각 항목이 별도 열로 들어갑니다.
-OCR 결과는 반드시 확인하세요.
-</small>
-</p>
+<div class="box">
 
-</section>
-</main>
+  <h3>OCR 원본 텍스트</h3>
 
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <p>
+    자동 분류가 잘못됐을 때 실제 인식된 글자를 확인할 수 있습니다.
+  </p>
+
+  <textarea id="raw" readonly></textarea>
+
+</div>
+
+</div>
 
 <script>
 
 const $ = id => document.getElementById(id);
 
+const canvas = $("canvas");
+const ctx = canvas.getContext("2d");
+
+let image = null;
+let selection = null;
+let dragging = false;
+let start = null;
 let busy = false;
-let queue = [];
-let workers = {};
-let epoch = 0;
+let worker = null;
 
 const tracks = [];
+const imageQueue = [];
 
 
-// 이미지 추가
-function add(files) {
-  queue.push(
-    ...files.filter(f => f.type.startsWith("image/"))
-  );
-  run();
-}
+// 파일 업로드
+$("uploadArea").addEventListener("click", e => {
+  if (e.target.id !== "file") {
+    $("file").click();
+  }
+});
+
+$("file").addEventListener("change", e => {
+  enqueueImages([...e.target.files]);
+  e.target.value = "";
+});
 
 
-// Ctrl + V
+// 이미지 붙여넣기
 document.addEventListener("paste", e => {
 
-  const files = [
-    ...(e.clipboardData?.items || [])
-  ]
-  .filter(i => i.type.startsWith("image/"))
-  .map(i => i.getAsFile())
-  .filter(Boolean);
+  const files = [...(e.clipboardData?.items || [])]
+    .filter(item => item.type.startsWith("image/"))
+    .map(item => item.getAsFile())
+    .filter(Boolean);
 
   if (files.length) {
     e.preventDefault();
-    add(files);
+    enqueueImages(files);
   }
 
 });
 
 
-// 이미지 업로드
-$("upload").onchange = e => {
-  add([...e.target.files]);
-  e.target.value = "";
+// 여러 이미지 대기열
+function enqueueImages(files) {
+
+  const valid = files.filter(
+    file => file.type.startsWith("image/")
+  );
+
+  imageQueue.push(...valid);
+
+  if (!image && imageQueue.length) {
+    loadNextImage();
+  } else {
+    $("status").textContent =
+      `${imageQueue.length}개 이미지 대기 중`;
+  }
+}
+
+
+// 다음 이미지
+async function loadNextImage() {
+
+  if (!imageQueue.length) {
+    image = null;
+    $("imageWrap").style.display = "none";
+    $("status").textContent = "모든 이미지 처리 완료";
+    return;
+  }
+
+  const file = imageQueue.shift();
+
+  try {
+
+    image = await createImageBitmap(file);
+
+    canvas.width = image.width;
+    canvas.height = image.height;
+
+    selection = null;
+
+    drawImage();
+
+    $("imageWrap").style.display = "block";
+
+    $("status").textContent =
+      "이미지를 확인하고 곡 목록 영역을 드래그한 뒤 추출하세요.";
+
+  } catch (error) {
+
+    $("status").textContent =
+      "이미지 열기 실패: " + error.message;
+
+  }
+}
+
+
+// 이미지 그리기
+function drawImage() {
+
+  if (!image) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.drawImage(image, 0, 0);
+
+  if (selection) {
+
+    const { x, y, w, h } = selection;
+
+    ctx.fillStyle = "rgba(30,215,96,0.15)";
+    ctx.fillRect(x, y, w, h);
+
+    ctx.strokeStyle = "#1ed760";
+    ctx.lineWidth = Math.max(2, canvas.width / 400);
+    ctx.strokeRect(x, y, w, h);
+
+  }
+
+}
+
+
+// 마우스 좌표
+function point(e) {
+
+  const rect = canvas.getBoundingClientRect();
+
+  return {
+    x: Math.max(0, Math.min(
+      canvas.width,
+      (e.clientX - rect.left) * canvas.width / rect.width
+    )),
+    y: Math.max(0, Math.min(
+      canvas.height,
+      (e.clientY - rect.top) * canvas.height / rect.height
+    ))
+  };
+
+}
+
+
+// 영역 선택
+canvas.addEventListener("pointerdown", e => {
+
+  if (busy) return;
+
+  dragging = true;
+  start = point(e);
+
+  canvas.setPointerCapture(e.pointerId);
+
+});
+
+canvas.addEventListener("pointermove", e => {
+
+  if (!dragging) return;
+
+  const end = point(e);
+
+  selection = {
+    x: Math.min(start.x, end.x),
+    y: Math.min(start.y, end.y),
+    w: Math.abs(end.x - start.x),
+    h: Math.abs(end.y - start.y)
+  };
+
+  drawImage();
+
+});
+
+canvas.addEventListener("pointerup", e => {
+
+  if (!dragging) return;
+
+  dragging = false;
+
+  const end = point(e);
+
+  selection = {
+    x: Math.min(start.x, end.x),
+    y: Math.min(start.y, end.y),
+    w: Math.abs(end.x - start.x),
+    h: Math.abs(end.y - start.y)
+  };
+
+  if (selection.w < 10 || selection.h < 10) {
+    selection = null;
+  }
+
+  drawImage();
+
+});
+
+
+// 영역 초기화
+$("resetSelection").onclick = () => {
+
+  selection = null;
+  drawImage();
+
 };
 
 
-// 텍스트 정리
-function clean(s) {
-  return (s || "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-
-// 결과 표 생성
-function render() {
-
-  const body = $("rows");
-  body.replaceChildren();
-
-  tracks.forEach((t, i) => {
-
-    const tr = document.createElement("tr");
-
-    for (let k = 0; k < 3; k++) {
-
-      const td = document.createElement("td");
-
-      td.contentEditable = "true";
-      td.textContent = t[k];
-
-      td.addEventListener("input", () => {
-        tracks[i][k] = td.textContent;
-      });
-
-      tr.append(td);
-    }
-
-    body.append(tr);
-  });
-
-  $("count").textContent = tracks.length + "곡";
-}
-
-
-// 이미지 영역 확대
-function crop(canvas, x, y, w, h, scale = 3) {
+// OCR용 이미지 만들기
+function makeCrop(area) {
 
   const out = document.createElement("canvas");
 
-  out.width = Math.max(1, Math.round(w * scale));
-  out.height = Math.max(1, Math.round(h * scale));
+  const scale = 2;
 
-  const ctx = out.getContext("2d");
+  out.width = Math.round(area.w * scale);
+  out.height = Math.round(area.h * scale);
 
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, out.width, out.height);
+  const c = out.getContext("2d");
 
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
+  c.fillStyle = "#ffffff";
+  c.fillRect(0, 0, out.width, out.height);
 
-  ctx.drawImage(
-    canvas,
-    x, y, w, h,
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = "high";
+
+  c.drawImage(
+    image,
+    area.x, area.y, area.w, area.h,
     0, 0, out.width, out.height
   );
 
@@ -270,250 +461,237 @@ function crop(canvas, x, y, w, h, scale = 3) {
 }
 
 
-// 이미지 OCR
-async function processImage(file, worker, token) {
+// 텍스트 정리
+function clean(text) {
+  return (text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  const url = URL.createObjectURL(file);
 
-  let bitmap;
+// 표 렌더링
+function render() {
+
+  const body = $("result");
+
+  body.replaceChildren();
+
+  tracks.forEach((track, index) => {
+
+    const tr = document.createElement("tr");
+
+    ["title", "artist", "album"].forEach(key => {
+
+      const td = document.createElement("td");
+
+      td.contentEditable = "true";
+      td.textContent = track[key];
+
+      td.addEventListener("input", () => {
+        tracks[index][key] = td.textContent;
+      });
+
+      tr.appendChild(td);
+
+    });
+
+    body.appendChild(tr);
+
+  });
+
+  $("count").textContent = tracks.length + "곡";
+
+}
+
+
+// OCR 실행
+async function recognize(useSelection) {
+
+  if (busy) return;
+
+  if (!image) {
+    alert("이미지를 먼저 넣어주세요.");
+    return;
+  }
+
+  if (useSelection && !selection) {
+    alert("먼저 곡 목록 영역을 드래그해서 선택하세요.");
+    return;
+  }
+
+  busy = true;
+
+  $("recognize").disabled = true;
+  $("full").disabled = true;
 
   try {
 
-    bitmap = await createImageBitmap(file);
+    $("status").textContent =
+      "한국어 + 영어 OCR 준비 중...";
 
-    const W = bitmap.width;
-    const H = bitmap.height;
+    if (!worker) {
 
-    const base = document.createElement("canvas");
+      worker = await Tesseract.createWorker("kor+eng");
 
-    base.width = W;
-    base.height = H;
+      await worker.setParameters({
+        preserve_interword_spaces: "1"
+      });
 
-    base.getContext("2d").drawImage(bitmap, 0, 0);
-
-    $("preview").src = url;
-    $("preview").style.display = "block";
-
-    // Spotify 화면의 열 위치
-    const titleX = Math.round(W * 0.155);
-    const titleEnd = Math.round(W * 0.505);
-
-    const albumX = Math.round(W * 0.512);
-    const albumEnd = Math.round(W * 0.735);
-
-    const top = Math.round(H * 0.16);
-    const bottom = Math.round(H * 0.965);
-
-    const height = bottom - top;
-
-
-    // 영역별 OCR
-    async function lines(x, width) {
-
-      const region = crop(
-        base, x, top, width, height, 3
-      );
-
-      const response = await worker.recognize(region);
-
-      return (response.data.lines || [])
-        .map(line => ({
-          text: clean(line.text),
-          y: (line.bbox.y0 + line.bbox.y1) / 6 / 3 + top
-        }))
-        .filter(line => line.text);
     }
 
+    const area = useSelection
+      ? selection
+      : {
+          x: 0,
+          y: 0,
+          w: image.width,
+          h: image.height
+        };
 
-    // 곡명 + 아티스트 영역
-    const left = await lines(
-      titleX,
-      titleEnd - titleX
-    );
+    const cropped = makeCrop(area);
 
-    if (token !== epoch) return;
+    $("status").textContent =
+      "이미지에서 텍스트 인식 중...";
 
+    const response = await worker.recognize(cropped);
 
-    // 앨범 영역
-    const albums = await lines(
-      albumX,
-      albumEnd - albumX
-    );
+    const data = response.data;
 
-    if (token !== epoch) return;
+    $("raw").value = data.text || "";
 
+    // 인식된 줄과 위치
+    const lines = (data.lines || [])
+      .map(line => ({
+        text: clean(line.text),
+        x: (line.bbox.x0 + line.bbox.x1) / 4,
+        y: (line.bbox.y0 + line.bbox.y1) / 4
+      }))
+      .filter(line => line.text);
 
-    // 곡명과 아티스트 묶기
-    const grouped = [];
+    // 위에서 아래로 정렬
+    lines.sort((a, b) => a.y - b.y);
 
-    for (let i = 0; i < left.length; i++) {
+    // 제목·아티스트·앨범 영역 구분
+    const width = cropped.width / 2;
 
-      const line = left[i];
-      const next = left[i + 1];
+    const titleArea = [];
+    const albumArea = [];
 
-      const nextGap = next
-        ? next.y - line.y
-        : Infinity;
+    for (const line of lines) {
 
-      const approxRow = H * 0.078;
-
-      if (
-        next &&
-        nextGap > 0 &&
-        nextGap < approxRow * 0.45
-      ) {
-
-        grouped.push({
-          title: line.text,
-          artist: next.text,
-          y: line.y
-        });
-
-        i++;
-
+      if (line.x < width * 0.56) {
+        titleArea.push(line);
       } else {
+        albumArea.push(line);
+      }
 
-        grouped.push({
-          title: line.text,
-          artist: "",
-          y: line.y
-        });
+    }
+
+    // 제목과 아티스트를 세로 위치로 묶기
+    const groups = [];
+
+    for (let i = 0; i < titleArea.length; i++) {
+
+      const current = titleArea[i];
+      const next = titleArea[i + 1];
+
+      let artist = "";
+
+      if (next) {
+
+        const gap = next.y - current.y;
+
+        // 가까운 두 줄을 제목·아티스트로 판단
+        if (gap > 0 && gap < 25) {
+          artist = next.text;
+          i++;
+        }
 
       }
-    }
 
+      groups.push({
+        title: current.text,
+        artist,
+        y: current.y
+      });
+
+    }
 
     // 앨범명 연결
     const used = new Set();
 
-    for (const g of grouped) {
+    for (const group of groups) {
 
-      if (!g.title) continue;
+      let album = "";
+      let bestIndex = -1;
+      let bestDistance = Infinity;
 
-      let best = -1;
-      let distance = Infinity;
+      albumArea.forEach((line, index) => {
 
-      albums.forEach((a, i) => {
+        if (used.has(index)) return;
 
-        if (used.has(i)) return;
+        const distance = Math.abs(line.y - group.y);
 
-        const delta = Math.abs(a.y - g.y);
-
-        if (delta < distance) {
-          distance = delta;
-          best = i;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestIndex = index;
         }
 
       });
 
-      let album = "";
+      if (bestIndex !== -1 && bestDistance < 30) {
 
-      if (
-        best >= 0 &&
-        distance < H * 0.035
-      ) {
-
-        album = albums[best].text;
-        used.add(best);
+        album = albumArea[bestIndex].text;
+        used.add(bestIndex);
 
       }
 
-      tracks.push([
-        g.title,
-        g.artist,
+      tracks.push({
+        title: group.title,
+        artist: group.artist,
         album
-      ]);
+      });
 
     }
 
     render();
 
-  } finally {
+    $("status").textContent =
+      `${groups.length}개 항목 인식 완료. 결과를 확인하세요.`;
 
-    bitmap?.close();
-    URL.revokeObjectURL(url);
+    image.close();
+    image = null;
 
-  }
-}
-
-
-// OCR 실행
-async function run() {
-
-  if (busy) return;
-
-  busy = true;
-
-  try {
-
-    while (queue.length) {
-
-      const file = queue.shift();
-      const token = epoch;
-      const lang = $("lang").value;
-
-      $("status").textContent =
-        "OCR 언어 데이터 준비 및 인식 중...";
-
-      if (!window.Tesseract) {
-        throw Error("OCR 라이브러리를 불러오지 못했습니다.");
-      }
-
-      if (!workers[lang]) {
-
-        workers[lang] =
-          await Tesseract.createWorker(lang);
-
-      }
-
-      if (token !== epoch) continue;
-
-      await processImage(
-        file,
-        workers[lang],
-        token
-      );
-
-      if (token === epoch) {
-
-        $("status").textContent =
-          "인식 완료! 결과를 확인하세요.";
-
-      }
-
+    if (imageQueue.length) {
+      await loadNextImage();
     }
 
-  } catch (e) {
+  } catch (error) {
 
     $("status").textContent =
-      "오류: " + e.message;
+      "OCR 오류: " + error.message;
 
   } finally {
 
     busy = false;
 
-    if (queue.length) run();
+    $("recognize").disabled = false;
+    $("full").disabled = false;
 
   }
+
 }
 
 
-// 초기화
-$("clear").onclick = () => {
-
-  epoch++;
-  queue = [];
-  tracks.length = 0;
-
-  render();
-
-  $("status").textContent = "초기화됨";
-  $("preview").style.display = "none";
-
-};
+// 선택 영역 추출
+$("recognize").onclick = () => recognize(true);
 
 
-// 전체 복사
+// 전체 이미지 추출
+$("full").onclick = () => recognize(false);
+
+
+// 엑셀 복사
 $("copy").onclick = async () => {
 
   if (!tracks.length) {
@@ -521,28 +699,50 @@ $("copy").onclick = async () => {
     return;
   }
 
-  const text = tracks
-    .map(t =>
-      t.map(v =>
-        v.replace(/[\t\r\n]+/g, " ")
-      ).join("\t")
-    )
-    .join("\n");
+  const text = tracks.map(track => {
+
+    return [
+      track.title,
+      track.artist,
+      track.album
+    ].map(value =>
+      (value || "").replace(/[\t\r\n]+/g, " ")
+    ).join("\t");
+
+  }).join("\n");
 
   try {
 
     await navigator.clipboard.writeText(text);
 
-    alert("복사 완료!");
+    $("status").textContent =
+      "복사 완료! 엑셀에 붙여넣으세요.";
 
-  } catch {
+  } catch (error) {
 
-    alert("복사 권한을 확인해 주세요.");
+    $("status").textContent =
+      "복사 실패: " + error.message;
 
   }
 
 };
 
+
+// 결과 초기화
+$("clear").onclick = () => {
+
+  tracks.length = 0;
+
+  render();
+
+  $("raw").value = "";
+
+  $("status").textContent =
+    "추출 결과 초기화 완료";
+
+};
+
 </script>
+
 </body>
 </html>
