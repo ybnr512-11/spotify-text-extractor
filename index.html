@@ -59,6 +59,11 @@ button.secondary {
   color: white;
 }
 
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 #file {
   margin: 10px 0;
   color: white;
@@ -103,6 +108,7 @@ button.secondary {
   margin-top: 15px;
   color: #1ed760;
   white-space: pre-wrap;
+  line-height: 1.6;
 }
 
 #result {
@@ -128,6 +134,51 @@ button.secondary {
 
 #pasteArea:focus {
   background: #292929;
+}
+
+#lastPreview {
+  display: none;
+  margin-top: 15px;
+  padding: 12px;
+  background: #151515;
+  border: 1px solid #444;
+  border-radius: 8px;
+}
+
+#lastPreview p {
+  margin: 0 0 10px;
+}
+
+#lastCrop {
+  display: block;
+  max-width: 100%;
+  max-height: 130px;
+  background: #252525;
+}
+
+#review {
+  display: none;
+  margin-top: 12px;
+  padding: 12px;
+  background: #302719;
+  border: 1px solid #8d672d;
+  border-radius: 8px;
+}
+
+#reviewText {
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  background: #151515;
+  color: white;
+  border: 1px solid #666;
+  border-radius: 6px;
+  font-size: 15px;
+}
+
+#reviewMessage {
+  color: #f1c27d;
+  line-height: 1.6;
 }
 </style>
 </head>
@@ -167,6 +218,36 @@ button.secondary {
 
   <div id="status">이미지를 넣어주세요.</div>
 
+  <button id="retry" class="secondary" disabled>
+    🔄 마지막 영역 다시 인식
+  </button>
+
+  <div id="lastPreview">
+    <p>마지막으로 선택한 영역</p>
+    <canvas id="lastCrop"></canvas>
+  </div>
+
+  <div id="review">
+    <div id="reviewMessage">
+      인식 결과를 확인해주세요.
+    </div>
+
+    <input
+      id="reviewText"
+      type="text"
+      spellcheck="false"
+      placeholder="필요하면 직접 수정하세요."
+    >
+
+    <button id="accept">
+      결과 추가
+    </button>
+
+    <button id="discard" class="secondary">
+      버리기
+    </button>
+  </div>
+
 </section>
 
 <section class="panel">
@@ -194,12 +275,23 @@ const $ = id => document.getElementById(id);
 
 const fileInput = $("file");
 const pasteArea = $("pasteArea");
+
 const imageContainer = $("imageContainer");
 const sourceImage = $("sourceImage");
+
 const selectionLayer = $("selectionLayer");
 const selection = $("selection");
+
 const statusEl = $("status");
 const resultEl = $("result");
+
+const retryButton = $("retry");
+const lastPreview = $("lastPreview");
+const lastCrop = $("lastCrop");
+
+const review = $("review");
+const reviewText = $("reviewText");
+const reviewMessage = $("reviewMessage");
 
 let worker = null;
 let workerPromise = null;
@@ -211,7 +303,9 @@ let startX = 0;
 let startY = 0;
 
 let imageVersion = 0;
-let pendingCount = 0;
+let requestVersion = 0;
+
+let lastSelection = null;
 
 const tasks = [];
 let processing = false;
@@ -281,13 +375,32 @@ pasteArea.addEventListener("drop", event => {
 });
 
 
+// 검토창 닫기
+function hideReview() {
+
+  review.style.display = "none";
+  reviewText.value = "";
+
+}
+
+
 // 이미지 불러오기
 function loadImage(file) {
 
   imageVersion++;
+  requestVersion++;
 
   tasks.length = 0;
-  pendingCount = 0;
+
+  lastSelection = null;
+
+  retryButton.disabled = true;
+  lastPreview.style.display = "none";
+
+  hideReview();
+
+  dragging = false;
+  selection.style.display = "none";
 
   if (imageURL) {
     URL.revokeObjectURL(imageURL);
@@ -305,8 +418,6 @@ function loadImage(file) {
   };
 
   sourceImage.src = imageURL;
-
-  selection.style.display = "none";
 
 }
 
@@ -337,6 +448,8 @@ selectionLayer.addEventListener("pointerdown", event => {
     return;
   }
 
+  event.preventDefault();
+
   dragging = true;
 
   const pos = getPosition(event);
@@ -361,6 +474,8 @@ selectionLayer.addEventListener("pointermove", event => {
 
   if (!dragging) return;
 
+  event.preventDefault();
+
   const pos = getPosition(event);
 
   const left = Math.min(startX, pos.x);
@@ -381,6 +496,8 @@ selectionLayer.addEventListener("pointermove", event => {
 selectionLayer.addEventListener("pointerup", event => {
 
   if (!dragging) return;
+
+  event.preventDefault();
 
   dragging = false;
 
@@ -403,6 +520,15 @@ selectionLayer.addEventListener("pointerup", event => {
 });
 
 
+// 드래그 취소
+selectionLayer.addEventListener("pointercancel", () => {
+
+  dragging = false;
+  selection.style.display = "none";
+
+});
+
+
 // OCR 엔진 준비
 async function getWorker() {
 
@@ -413,16 +539,20 @@ async function getWorker() {
   workerPromise = (async () => {
 
     if (typeof Tesseract === "undefined") {
-      throw new Error("OCR 라이브러리를 불러오지 못했습니다.");
+      throw new Error(
+        "OCR 라이브러리를 불러오지 못했습니다."
+      );
     }
 
-    const newWorker = await Tesseract.createWorker("kor+eng");
+    /*
+      기존 정상 작동 코드의 OCR 설정 유지
+    */
+
+    const newWorker = await Tesseract.createWorker(
+      "kor+eng"
+    );
 
     await newWorker.setParameters({
-
-      /*
-        선택한 영역을 하나의 텍스트 줄로 인식
-      */
 
       tessedit_pageseg_mode: "7",
 
@@ -437,10 +567,14 @@ async function getWorker() {
   })();
 
   try {
+
     return await workerPromise;
+
   } catch (error) {
+
     workerPromise = null;
     throw error;
+
   }
 
 }
@@ -464,7 +598,9 @@ function recognizeSelection(left, top, width, height) {
   const cropWidth = Math.round(width * scaleX);
   const cropHeight = Math.round(height * scaleY);
 
-  if (cropWidth < 2 || cropHeight < 2) return;
+  if (cropWidth < 2 || cropHeight < 2) {
+    return;
+  }
 
   const canvas = document.createElement("canvas");
 
@@ -472,6 +608,13 @@ function recognizeSelection(left, top, width, height) {
   canvas.height = cropHeight;
 
   const ctx = canvas.getContext("2d");
+
+  /*
+    기존 코드와 동일한 방식으로 자르기
+    여백 추가 없음
+    확대 없음
+    흑백 변환 없음
+  */
 
   ctx.drawImage(
     sourceImage,
@@ -485,17 +628,199 @@ function recognizeSelection(left, top, width, height) {
     cropHeight
   );
 
+  /*
+    마지막 영역을 저장합니다.
+    다시 인식할 때 동일한 이미지를 사용합니다.
+  */
+
+  lastSelection = canvas;
+
+  retryButton.disabled = false;
+
+  showLastCrop(canvas);
+
+  hideReview();
+
+  addTask(canvas);
+
+}
+
+
+// 마지막 선택 영역 미리보기
+function showLastCrop(canvas) {
+
+  lastCrop.width = canvas.width;
+  lastCrop.height = canvas.height;
+
+  const ctx = lastCrop.getContext("2d");
+
+  ctx.clearRect(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  ctx.drawImage(canvas, 0, 0);
+
+  lastPreview.style.display = "block";
+
+}
+
+
+// OCR 작업 추가
+function addTask(canvas) {
+
   tasks.push({
     canvas,
-    version: imageVersion
+    version: imageVersion,
+    request: ++requestVersion
   });
-
-  pendingCount++;
 
   statusEl.textContent =
     "선택한 영역을 인식 중...";
 
   processTasks();
+
+}
+
+
+// 마지막 영역 다시 인식
+retryButton.addEventListener("click", () => {
+
+  if (!lastSelection) {
+    return;
+  }
+
+  hideReview();
+
+  /*
+    이전에 잘라낸 영역을 그대로 재사용합니다.
+    새로운 이미지 변환은 하지 않습니다.
+  */
+
+  addTask(lastSelection);
+
+});
+
+
+// 인식 결과를 한 줄로 정리
+function normalizeText(text) {
+
+  return (text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+}
+
+
+// 기호 위주 결과인지 확인
+function isMostlySymbols(text) {
+
+  const letters = (
+    text.match(/[A-Za-z가-힣0-9]/g) || []
+  ).length;
+
+  const visible = text.replace(/\s/g, "").length;
+
+  if (!visible) {
+    return true;
+  }
+
+  return letters / visible < 0.6;
+
+}
+
+
+// 결과 검증
+function validateResult(response) {
+
+  const text = normalizeText(
+    response.data.text
+  );
+
+  const confidence = Number(
+    response.data.confidence
+  );
+
+  if (!text) {
+
+    return {
+      accepted: false,
+      text: "",
+      reason: "글자가 인식되지 않았습니다."
+    };
+
+  }
+
+  if (isMostlySymbols(text)) {
+
+    return {
+      accepted: false,
+      text,
+      reason: "기호가 너무 많아 자동 추가하지 않았습니다."
+    };
+
+  }
+
+  /*
+    신뢰도 60 미만은 자동 추가하지 않습니다.
+    이 수치는 정확성 보장이 아닌 검토 기준입니다.
+  */
+
+  if (
+    Number.isFinite(confidence) &&
+    confidence < 60
+  ) {
+
+    return {
+      accepted: false,
+      text,
+      reason:
+        `인식 신뢰도가 낮습니다. (${confidence.toFixed(0)}점)`
+    };
+
+  }
+
+  return {
+    accepted: true,
+    text,
+    reason: ""
+  };
+
+}
+
+
+// 결과 추가
+function appendResult(text) {
+
+  const cleaned = normalizeText(text);
+
+  if (!cleaned) {
+    return;
+  }
+
+  if (resultEl.value) {
+    resultEl.value += "\n";
+  }
+
+  resultEl.value += cleaned;
+
+  resultEl.scrollTop =
+    resultEl.scrollHeight;
+
+}
+
+
+// 검토창 표시
+function showReview(text, reason) {
+
+  review.style.display = "block";
+
+  reviewMessage.textContent =
+    reason + " 아래 내용을 확인한 뒤 추가하거나 버리세요.";
+
+  reviewText.value = text;
 
 }
 
@@ -515,39 +840,48 @@ async function processTasks() {
 
       const task = tasks.shift();
 
-      const response = await ocrWorker.recognize(task.canvas);
+      statusEl.textContent =
+        "선택한 영역 글자 인식 중...";
 
-      if (task.version !== imageVersion) {
+      const response = await ocrWorker.recognize(
+        task.canvas
+      );
+
+      /*
+        다른 이미지를 불러왔거나
+        더 최근 인식 요청이 있으면
+        오래된 결과는 무시합니다.
+      */
+
+      if (
+        task.version !== imageVersion ||
+        task.request !== requestVersion
+      ) {
         continue;
       }
 
-      /*
-        선택 영역 안의 줄바꿈과
-        불필요한 연속 공백만 제거
-      */
+      const validation = validateResult(response);
 
-      const text = (response.data.text || "")
-        .replace(/\s+/g, " ")
-        .trim();
+      if (validation.accepted) {
 
-      if (text) {
+        hideReview();
 
-        if (resultEl.value) {
-          resultEl.value += "\n";
-        }
+        appendResult(validation.text);
 
-        resultEl.value += text;
+        statusEl.textContent =
+          "인식 완료. 다음 영역을 드래그하세요.";
 
-        resultEl.scrollTop = resultEl.scrollHeight;
+      } else {
+
+        showReview(
+          validation.text,
+          validation.reason
+        );
+
+        statusEl.textContent =
+          "인식 결과 확인 필요. 자동 추가하지 않았습니다.";
 
       }
-
-      pendingCount--;
-
-      statusEl.textContent =
-        pendingCount > 0
-          ? `인식 중... 남은 영역 ${pendingCount}개`
-          : "인식 완료. 다음 영역을 드래그하세요.";
 
     }
 
@@ -559,7 +893,6 @@ async function processTasks() {
       "OCR 오류: " + error.message;
 
     tasks.length = 0;
-    pendingCount = 0;
 
   } finally {
 
@@ -570,21 +903,56 @@ async function processTasks() {
 }
 
 
+// 검토 결과 직접 추가
+$("accept").addEventListener("click", () => {
+
+  const text = normalizeText(
+    reviewText.value
+  );
+
+  if (!text) {
+    return;
+  }
+
+  appendResult(text);
+
+  hideReview();
+
+  statusEl.textContent =
+    "확인한 결과를 추가했습니다.";
+
+});
+
+
+// 검토 결과 버리기
+$("discard").addEventListener("click", () => {
+
+  hideReview();
+
+  statusEl.textContent =
+    "인식 결과를 버렸습니다.";
+
+});
+
+
 // 전체 복사
 $("copy").addEventListener("click", async () => {
 
   const text = resultEl.value;
 
   if (!text.trim()) {
+
     alert("복사할 내용이 없습니다.");
     return;
+
   }
 
   try {
 
     await navigator.clipboard.writeText(text);
 
-    statusEl.textContent = "전체 복사 완료!";
+    statusEl.textContent =
+      "전체 복사 완료!";
 
   } catch {
 
@@ -592,7 +960,8 @@ $("copy").addEventListener("click", async () => {
 
     document.execCommand("copy");
 
-    statusEl.textContent = "전체 복사 완료!";
+    statusEl.textContent =
+      "전체 복사 완료!";
 
   }
 
@@ -603,13 +972,23 @@ $("copy").addEventListener("click", async () => {
 $("clear").addEventListener("click", () => {
 
   imageVersion++;
+  requestVersion++;
 
   tasks.length = 0;
-  pendingCount = 0;
 
   resultEl.value = "";
 
+  dragging = false;
+
   selection.style.display = "none";
+
+  lastSelection = null;
+
+  retryButton.disabled = true;
+
+  lastPreview.style.display = "none";
+
+  hideReview();
 
   statusEl.textContent =
     "초기화 완료. 이미지를 넣어주세요.";
@@ -619,8 +998,10 @@ $("clear").addEventListener("click", () => {
   sourceImage.removeAttribute("src");
 
   if (imageURL) {
+
     URL.revokeObjectURL(imageURL);
     imageURL = null;
+
   }
 
 });
