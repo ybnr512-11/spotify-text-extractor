@@ -8,13 +8,15 @@
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <style>
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
   padding: 24px;
   background: #121212;
-  color: #fff;
+  color: #ffffff;
   font-family: Arial, sans-serif;
 }
 
@@ -23,10 +25,12 @@ main {
   margin: auto;
 }
 
-h1 { color: #1ed760; }
+h1 {
+  color: #1ed760;
+}
 
 p {
-  color: #bbb;
+  color: #b3b3b3;
   line-height: 1.6;
 }
 
@@ -45,7 +49,9 @@ p {
   cursor: pointer;
 }
 
-#drop:hover { background: #292929; }
+#drop:hover {
+  background: #292929;
+}
 
 button {
   padding: 11px 17px;
@@ -63,12 +69,17 @@ button.secondary {
   color: white;
 }
 
-textarea {
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+#result {
   width: 100%;
   height: 450px;
   padding: 15px;
   background: #151515;
-  color: #fff;
+  color: #ffffff;
   border: 1px solid #555;
   border-radius: 8px;
   font-family: Consolas, "Courier New", monospace;
@@ -82,6 +93,7 @@ textarea {
 #status {
   color: #1ed760;
   margin-top: 15px;
+  white-space: pre-wrap;
 }
 
 #preview {
@@ -89,9 +101,12 @@ textarea {
   max-height: 240px;
   display: none;
   margin-top: 15px;
+  border-radius: 8px;
 }
 
-small { color: #999; }
+small {
+  color: #999;
+}
 </style>
 </head>
 
@@ -103,39 +118,49 @@ small { color: #999; }
 
 <p>
 Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣으세요.<br>
-한국어 + 영어 / 화면의 행과 열 구조를 최대한 유지합니다.
+한국어 + 영어 텍스트를 추출합니다.
 </p>
 
 <section class="box">
 
-<div id="drop">
-  <h3>📋 Ctrl + V로 이미지 붙여넣기</h3>
-  <p>또는 클릭해서 이미지 선택</p>
-  <input id="file" type="file" accept="image/*" multiple hidden>
-</div>
+  <div id="drop">
+    <h3>📋 Ctrl + V로 이미지 붙여넣기</h3>
+    <p>또는 클릭해서 이미지 선택</p>
 
-<img id="preview" alt="이미지 미리보기">
+    <input
+      id="file"
+      type="file"
+      accept="image/*"
+      multiple
+      hidden
+    >
+  </div>
 
-<div id="status">이미지를 넣어주세요.</div>
+  <img id="preview" alt="이미지 미리보기">
+
+  <div id="status">이미지를 넣어주세요.</div>
 
 </section>
 
 <section class="box">
 
-<h2>추출 결과</h2>
+  <h2>추출 결과</h2>
 
-<button id="copy">📋 전체 복사</button>
-<button id="clear" class="secondary">초기화</button>
+  <button id="copy">📋 전체 복사</button>
+  <button id="clear" class="secondary">초기화</button>
 
-<p>
-<small>
-OCR 결과를 화면의 위치에 맞춰 정렬합니다.
-텍스트를 직접 수정할 수도 있습니다.
-</small>
-</p>
+  <p>
+    <small>
+      여러 장을 붙여넣으면 기존 결과 아래에 계속 추가됩니다.
+    </small>
+  </p>
 
-<textarea id="result" spellcheck="false"
-placeholder="추출된 텍스트가 여기에 표시됩니다."></textarea>
+  <textarea
+    id="result"
+    readonly
+    spellcheck="false"
+    placeholder="추출된 텍스트가 여기에 표시됩니다."
+  ></textarea>
 
 </section>
 
@@ -146,18 +171,26 @@ placeholder="추출된 텍스트가 여기에 표시됩니다."></textarea>
 const $ = id => document.getElementById(id);
 
 const queue = [];
+
 let working = false;
 let worker = null;
 let version = 0;
 
-$("drop").onclick = () => $("file").click();
 
-$("file").onchange = e => {
+// 이미지 파일 선택
+$("drop").addEventListener("click", () => {
+  $("file").click();
+});
+
+$("file").addEventListener("change", e => {
   addFiles([...e.target.files]);
   e.target.value = "";
-};
+});
 
+
+// Ctrl + V 이미지 붙여넣기
 document.addEventListener("paste", e => {
+
   const files = [...(e.clipboardData?.items || [])]
     .filter(item => item.type.startsWith("image/"))
     .map(item => item.getAsFile())
@@ -167,16 +200,31 @@ document.addEventListener("paste", e => {
     e.preventDefault();
     addFiles(files);
   }
+
 });
 
+
+// 이미지 대기열 추가
 function addFiles(files) {
-  queue.push(...files.filter(f => f?.type.startsWith("image/")));
+
+  const images = files.filter(
+    file => file && file.type.startsWith("image/")
+  );
+
+  if (!images.length) return;
+
+  queue.push(...images);
+
   run();
+
 }
 
+
+// OCR 결과를 화면 위치에 맞춰 정렬
 function formatLines(data) {
+
   const lines = (data.lines || [])
-    .filter(line => line.text?.trim())
+    .filter(line => line.text && line.text.trim())
     .map(line => ({
       text: line.text.trim().replace(/\s+/g, " "),
       x: line.bbox.x0,
@@ -188,128 +236,216 @@ function formatLines(data) {
     return data.text || "";
   }
 
-  // 비슷한 높이의 텍스트는 같은 행으로 정렬
+  // 위에서 아래로 정렬
   lines.sort((a, b) => a.y - b.y || a.x - b.x);
 
-  const medianHeight = [...lines]
+  const heights = lines
     .map(line => line.height)
-    .sort((a, b) => a - b)[Math.floor(lines.length / 2)] || 16;
+    .sort((a, b) => a - b);
+
+  const medianHeight =
+    heights[Math.floor(heights.length / 2)] || 16;
 
   const tolerance = Math.max(5, medianHeight * 0.55);
+
   const rows = [];
 
+  // 같은 높이에 있는 텍스트끼리 묶기
   for (const line of lines) {
-    let row = rows.find(r => Math.abs(r.y - line.y) <= tolerance);
+
+    let row = rows.find(
+      r => Math.abs(r.y - line.y) <= tolerance
+    );
 
     if (!row) {
-      row = { y: line.y, items: [] };
+
+      row = {
+        y: line.y,
+        items: []
+      };
+
       rows.push(row);
+
     }
 
     row.items.push(line);
+
   }
 
   rows.sort((a, b) => a.y - b.y);
 
-  // 글자 위치를 공백으로 표현
+  // 원본 화면의 가로 위치를 공백으로 표현
   const charWidth = Math.max(6, medianHeight * 0.55);
 
   return rows.map(row => {
+
     row.items.sort((a, b) => a.x - b.x);
 
     let output = "";
     let cursor = 0;
 
     for (const item of row.items) {
-      const column = Math.max(0, Math.round(item.x / charWidth));
-      const spaces = Math.max(1, column - cursor);
+
+      const column = Math.max(
+        0,
+        Math.round(item.x / charWidth)
+      );
+
+      const spaces = Math.max(
+        1,
+        column - cursor
+      );
 
       output += " ".repeat(
-        output ? Math.min(spaces, 60) : Math.min(column, 60)
+        output
+          ? Math.min(spaces, 60)
+          : Math.min(column, 60)
       );
 
       output += item.text;
+
       cursor = column + item.text.length;
+
     }
 
     return output.trimEnd();
+
   }).join("\n");
+
 }
 
+
+// OCR 실행
 async function run() {
+
   if (working) return;
+
   working = true;
 
   try {
+
     if (!worker) {
-      $("status").textContent = "한국어 + 영어 OCR 준비 중...";
+
+      $("status").textContent =
+        "한국어 + 영어 OCR 준비 중...";
+
       worker = await Tesseract.createWorker("kor+eng");
+
       await worker.setParameters({
         preserve_interword_spaces: "1"
       });
+
     }
 
     while (queue.length) {
+
       const file = queue.shift();
       const currentVersion = version;
 
       const url = URL.createObjectURL(file);
+
       $("preview").src = url;
       $("preview").style.display = "block";
 
-      $("status").textContent = "이미지 인식 중...";
+      $("status").textContent =
+        "이미지 인식 중...";
 
       try {
+
         const response = await worker.recognize(file);
 
-        if (currentVersion !== version) continue;
+        if (currentVersion !== version) {
+          continue;
+        }
 
         const text = formatLines(response.data).trim();
 
         if (text) {
+
           $("result").value +=
             ($("result").value.trim() ? "\n\n" : "") + text;
+
+          $("result").scrollTop =
+            $("result").scrollHeight;
+
         }
 
         $("status").textContent =
-          "인식 완료! 남은 이미지: " + queue.length + "장";
+          "인식 완료! 남은 이미지: " +
+          queue.length + "장";
 
       } finally {
+
         URL.revokeObjectURL(url);
+
       }
+
     }
 
   } catch (error) {
-    $("status").textContent = "오류: " + error.message;
+
+    $("status").textContent =
+      "오류: " + error.message;
+
   } finally {
+
     working = false;
-    if (queue.length) run();
+
+    if (queue.length) {
+      run();
+    }
+
   }
+
 }
 
-$("copy").onclick = async () => {
-  if (!$("result").value.trim()) {
+
+// 전체 복사
+$("copy").addEventListener("click", async () => {
+
+  const text = $("result").value;
+
+  if (!text.trim()) {
     alert("복사할 내용이 없습니다.");
     return;
   }
 
   try {
-    await navigator.clipboard.writeText($("result").value);
-    $("status").textContent = "복사 완료!";
-  } catch {
-    $("result").select();
-    document.execCommand("copy");
-    $("status").textContent = "복사 완료!";
-  }
-};
 
-$("clear").onclick = () => {
+    await navigator.clipboard.writeText(text);
+
+    $("status").textContent = "복사 완료!";
+
+  } catch (error) {
+
+    $("result").select();
+
+    const success = document.execCommand("copy");
+
+    $("status").textContent = success
+      ? "복사 완료!"
+      : "복사에 실패했습니다.";
+
+  }
+
+});
+
+
+// 초기화
+$("clear").addEventListener("click", () => {
+
   version++;
+
   queue.length = 0;
+
   $("result").value = "";
+
   $("preview").style.display = "none";
-  $("status").textContent = "초기화 완료";
-};
+
+  $("status").textContent =
+    "초기화 완료. 새 이미지를 넣어주세요.";
+
+});
 
 </script>
 
