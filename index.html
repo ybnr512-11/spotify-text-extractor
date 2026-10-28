@@ -228,7 +228,6 @@ button:disabled {
     accept="image/*"
   >
 
-  <!-- 추가: OCR 언어 선택 -->
   <div id="languageBox">
     <label for="language">🌐 인식 언어</label>
 
@@ -338,13 +337,11 @@ const review = $("review");
 const reviewText = $("reviewText");
 const reviewMessage = $("reviewMessage");
 
-// 추가: 언어 선택
 const languageSelect = $("language");
 
 let worker = null;
 let workerPromise = null;
 
-// 추가: 현재 OCR 엔진의 언어
 let workerLanguage = null;
 let workerLoadingLanguage = null;
 
@@ -581,7 +578,7 @@ selectionLayer.addEventListener("pointercancel", () => {
 });
 
 
-// 추가: 언어 변경 시 기존 결과와 이미지는 유지
+// 언어 변경 시 기존 결과와 이미지는 유지
 languageSelect.addEventListener("change", () => {
 
   statusEl.textContent =
@@ -593,12 +590,10 @@ languageSelect.addEventListener("change", () => {
 // OCR 엔진 준비
 async function getWorker(language) {
 
-  // 같은 언어라면 기존 엔진 재사용
   if (worker && workerLanguage === language) {
     return worker;
   }
 
-  // 같은 언어를 준비 중이라면 기다림
   if (
     workerPromise &&
     workerLoadingLanguage === language
@@ -606,7 +601,6 @@ async function getWorker(language) {
     return workerPromise;
   }
 
-  // 이전 엔진 생성 작업이 끝날 때까지 대기
   if (workerPromise) {
     try {
       await workerPromise;
@@ -615,7 +609,6 @@ async function getWorker(language) {
     }
   }
 
-  // 언어가 다르면 기존 엔진 종료
   if (worker && workerLanguage !== language) {
 
     await worker.terminate();
@@ -638,11 +631,6 @@ async function getWorker(language) {
         "OCR 라이브러리를 불러오지 못했습니다."
       );
     }
-
-    /*
-      기존 정상 작동 코드의 OCR 설정 유지.
-      언어만 선택값으로 변경합니다.
-    */
 
     const newWorker = await Tesseract.createWorker(
       language
@@ -708,13 +696,6 @@ function recognizeSelection(left, top, width, height) {
 
   const ctx = canvas.getContext("2d");
 
-  /*
-    기존 코드와 동일한 방식으로 자르기.
-    여백 추가 없음.
-    확대 없음.
-    흑백 변환 없음.
-  */
-
   ctx.drawImage(
     sourceImage,
     cropX,
@@ -769,8 +750,6 @@ function addTask(canvas) {
     canvas,
     version: imageVersion,
     request: ++requestVersion,
-
-    // 추가: 선택 시점의 언어를 저장
     language: languageSelect.value
   });
 
@@ -809,8 +788,9 @@ function normalizeText(text) {
 // 기호 위주 결과인지 확인
 function isMostlySymbols(text) {
 
+  // 수정: 일본어·한자·스페인어·포르투갈어도 정상 글자로 인정
   const letters = (
-    text.match(/[A-Za-z가-힣0-9]/g) || []
+    text.match(/[\p{L}\p{N}]/gu) || []
   ).length;
 
   const visible = text.replace(/\s/g, "").length;
@@ -928,7 +908,6 @@ async function processTasks() {
       statusEl.textContent =
         "선택한 영역 글자 인식 중...";
 
-      // 추가: 해당 작업에서 선택한 언어로 인식
       const ocrWorker = await getWorker(
         task.language
       );
