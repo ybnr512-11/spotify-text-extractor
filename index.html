@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Spotify 텍스트 추출기</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -14,37 +15,38 @@
 
 body {
   margin: 0;
-  padding: 24px;
+  padding: 25px 18px;
   background: #121212;
-  color: #ffffff;
+  color: #fff;
   font-family: Arial, sans-serif;
 }
 
 main {
-  max-width: 1050px;
+  max-width: 1000px;
   margin: auto;
 }
 
 h1 {
   color: #1ed760;
+  margin-bottom: 8px;
 }
 
 p {
-  color: #b3b3b3;
+  color: #aaa;
   line-height: 1.6;
 }
 
 .box {
   background: #202020;
-  padding: 22px;
-  margin-top: 18px;
   border-radius: 12px;
+  padding: 22px;
+  margin-top: 20px;
 }
 
 #drop {
-  padding: 35px;
   border: 2px dashed #1ed760;
   border-radius: 10px;
+  padding: 35px 20px;
   text-align: center;
   cursor: pointer;
 }
@@ -54,35 +56,30 @@ p {
 }
 
 button {
-  padding: 11px 17px;
+  padding: 12px 18px;
   margin: 5px 5px 5px 0;
+  border: none;
+  border-radius: 8px;
   background: #1ed760;
   color: #111;
-  border: none;
-  border-radius: 7px;
   font-weight: bold;
   cursor: pointer;
 }
 
 button.secondary {
   background: #444;
-  color: white;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: wait;
+  color: #fff;
 }
 
 #result {
   width: 100%;
-  height: 450px;
-  padding: 15px;
-  background: #151515;
-  color: #ffffff;
+  height: 460px;
+  padding: 16px;
   border: 1px solid #555;
   border-radius: 8px;
-  font-family: Consolas, "Courier New", monospace;
+  background: #151515;
+  color: #fff;
+  font-family: Consolas, monospace;
   font-size: 14px;
   line-height: 1.8;
   white-space: pre;
@@ -91,15 +88,15 @@ button:disabled {
 }
 
 #status {
-  color: #1ed760;
   margin-top: 15px;
+  color: #1ed760;
   white-space: pre-wrap;
 }
 
 #preview {
-  max-width: 100%;
-  max-height: 240px;
   display: none;
+  max-width: 100%;
+  max-height: 260px;
   margin-top: 15px;
   border-radius: 8px;
 }
@@ -118,7 +115,7 @@ small {
 
 <p>
 Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣으세요.<br>
-한국어 + 영어 텍스트를 추출합니다.
+한국어·영어 텍스트를 자동으로 인식합니다.
 </p>
 
 <section class="box">
@@ -136,7 +133,7 @@ Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣으세요.<br>
     >
   </div>
 
-  <img id="preview" alt="이미지 미리보기">
+  <img id="preview" alt="캡처 이미지">
 
   <div id="status">이미지를 넣어주세요.</div>
 
@@ -151,7 +148,7 @@ Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣으세요.<br>
 
   <p>
     <small>
-      여러 장을 붙여넣으면 기존 결과 아래에 계속 추가됩니다.
+      여러 장을 넣으면 결과가 아래로 계속 추가됩니다.
     </small>
   </p>
 
@@ -170,25 +167,25 @@ Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣으세요.<br>
 
 const $ = id => document.getElementById(id);
 
+let worker = null;
+let working = false;
+let generation = 0;
+
 const queue = [];
 
-let working = false;
-let worker = null;
-let version = 0;
 
-
-// 이미지 파일 선택
+// 이미지 업로드
 $("drop").addEventListener("click", () => {
   $("file").click();
 });
 
 $("file").addEventListener("change", e => {
-  addFiles([...e.target.files]);
+  addImages([...e.target.files]);
   e.target.value = "";
 });
 
 
-// Ctrl + V 이미지 붙여넣기
+// Ctrl + V 붙여넣기
 document.addEventListener("paste", e => {
 
   const files = [...(e.clipboardData?.items || [])]
@@ -198,17 +195,17 @@ document.addEventListener("paste", e => {
 
   if (files.length) {
     e.preventDefault();
-    addFiles(files);
+    addImages(files);
   }
 
 });
 
 
-// 이미지 대기열 추가
-function addFiles(files) {
+// 이미지 대기열
+function addImages(files) {
 
-  const images = files.filter(
-    file => file && file.type.startsWith("image/")
+  const images = files.filter(file =>
+    file && file.type.startsWith("image/")
   );
 
   if (!images.length) return;
@@ -220,97 +217,136 @@ function addFiles(files) {
 }
 
 
-// OCR 결과를 화면 위치에 맞춰 정렬
-function formatLines(data) {
+// 이미지 전처리
+async function prepareImage(file) {
 
-  const lines = (data.lines || [])
-    .filter(line => line.text && line.text.trim())
-    .map(line => ({
-      text: line.text.trim().replace(/\s+/g, " "),
-      x: line.bbox.x0,
-      y: (line.bbox.y0 + line.bbox.y1) / 2,
-      height: line.bbox.y1 - line.bbox.y0
-    }));
+  const bitmap = await createImageBitmap(file);
 
-  if (!lines.length) {
-    return data.text || "";
-  }
+  try {
 
-  // 위에서 아래로 정렬
-  lines.sort((a, b) => a.y - b.y || a.x - b.x);
+    const W = bitmap.width;
+    const H = bitmap.height;
 
-  const heights = lines
-    .map(line => line.height)
-    .sort((a, b) => a - b);
+    /*
+      스포티파이 화면에서
+      상단 플레이리스트 소개와
+      하단 재생바를 제외합니다.
 
-  const medianHeight =
-    heights[Math.floor(heights.length / 2)] || 16;
+      사용자가 올린 전체 화면 캡처 기준입니다.
+    */
 
-  const tolerance = Math.max(5, medianHeight * 0.55);
+    let cropX = 0;
+    let cropY = 0;
+    let cropW = W;
+    let cropH = H;
 
-  const rows = [];
+    /*
+      전체 화면 캡처처럼 세로가 긴 이미지일 때만
+      상단/하단 불필요한 영역을 제외합니다.
 
-  // 같은 높이에 있는 텍스트끼리 묶기
-  for (const line of lines) {
+      곡 목록만 캡처한 이미지는 자르지 않습니다.
+    */
 
-    let row = rows.find(
-      r => Math.abs(r.y - line.y) <= tolerance
+    if (H > W * 0.95) {
+
+      cropY = Math.round(H * 0.26);
+      cropH = Math.round(H * 0.70);
+
+    }
+
+    /*
+      작은 글자를 3배 확대합니다.
+    */
+
+    const scale = 3;
+
+    const canvas = document.createElement("canvas");
+
+    canvas.width = cropW * scale;
+    canvas.height = cropH * scale;
+
+    const ctx = canvas.getContext("2d", {
+      willReadFrequently: true
+    });
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    ctx.drawImage(
+      bitmap,
+      cropX,
+      cropY,
+      cropW,
+      cropH,
+      0,
+      0,
+      canvas.width,
+      canvas.height
     );
 
-    if (!row) {
+    /*
+      Spotify의 어두운 배경과
+      밝은 글자를 OCR에 적합하도록 변환합니다.
 
-      row = {
-        y: line.y,
-        items: []
-      };
+      어두운 배경 → 흰색
+      밝은 글자 → 검은색
 
-      rows.push(row);
+      글자를 새로 만들거나 추측하지 않습니다.
+    */
+
+    const imageData = ctx.getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    const pixels = imageData.data;
+
+    for (let i = 0; i < pixels.length; i += 4) {
+
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+
+      const brightness =
+        0.299 * r +
+        0.587 * g +
+        0.114 * b;
+
+      /*
+        완전한 흑백으로 만들지 않고
+        회색 계조를 일부 유지합니다.
+      */
+
+      let value;
+
+      if (brightness < 55) {
+        value = 255;
+      } else if (brightness > 175) {
+        value = 0;
+      } else {
+        value = Math.round(
+          255 - (brightness - 55) * (255 / 120)
+        );
+      }
+
+      pixels[i] = value;
+      pixels[i + 1] = value;
+      pixels[i + 2] = value;
+      pixels[i + 3] = 255;
 
     }
 
-    row.items.push(line);
+    ctx.putImageData(imageData, 0, 0);
+
+    return canvas;
+
+  } finally {
+
+    bitmap.close();
 
   }
-
-  rows.sort((a, b) => a.y - b.y);
-
-  // 원본 화면의 가로 위치를 공백으로 표현
-  const charWidth = Math.max(6, medianHeight * 0.55);
-
-  return rows.map(row => {
-
-    row.items.sort((a, b) => a.x - b.x);
-
-    let output = "";
-    let cursor = 0;
-
-    for (const item of row.items) {
-
-      const column = Math.max(
-        0,
-        Math.round(item.x / charWidth)
-      );
-
-      const spaces = Math.max(
-        1,
-        column - cursor
-      );
-
-      output += " ".repeat(
-        output
-          ? Math.min(spaces, 60)
-          : Math.min(column, 60)
-      );
-
-      output += item.text;
-
-      cursor = column + item.text.length;
-
-    }
-
-    return output.trimEnd();
-
-  }).join("\n");
 
 }
 
@@ -327,20 +363,33 @@ async function run() {
     if (!worker) {
 
       $("status").textContent =
-        "한국어 + 영어 OCR 준비 중...";
+        "한국어 + 영어 OCR 엔진 준비 중...";
 
       worker = await Tesseract.createWorker("kor+eng");
 
       await worker.setParameters({
+
+        /*
+          자동 페이지 분석
+          텍스트 영역을 OCR 엔진이 판단합니다.
+        */
+
+        tessedit_pageseg_mode: "3",
+
+        /*
+          단어 사이 공백 유지
+        */
+
         preserve_interword_spaces: "1"
+
       });
 
     }
 
-    while (queue.length) {
+    while (queue.length > 0) {
 
       const file = queue.shift();
-      const currentVersion = version;
+      const currentGeneration = generation;
 
       const url = URL.createObjectURL(file);
 
@@ -348,22 +397,36 @@ async function run() {
       $("preview").style.display = "block";
 
       $("status").textContent =
-        "이미지 인식 중...";
+        "이미지 전처리 중...";
 
       try {
 
-        const response = await worker.recognize(file);
+        const prepared = await prepareImage(file);
 
-        if (currentVersion !== version) {
+        $("status").textContent =
+          "글자 인식 중...";
+
+        const response = await worker.recognize(prepared);
+
+        if (currentGeneration !== generation) {
           continue;
         }
 
-        const text = formatLines(response.data).trim();
+        /*
+          곡명·아티스트·앨범 분류 없음
+          좌표 재정렬 없음
+          OCR 원본 결과만 출력
+        */
+
+        const text = (response.data.text || "").trim();
 
         if (text) {
 
-          $("result").value +=
-            ($("result").value.trim() ? "\n\n" : "") + text;
+          if ($("result").value.trim()) {
+            $("result").value += "\n\n";
+          }
+
+          $("result").value += text;
 
           $("result").scrollTop =
             $("result").scrollHeight;
@@ -391,7 +454,7 @@ async function run() {
 
     working = false;
 
-    if (queue.length) {
+    if (queue.length > 0) {
       run();
     }
 
@@ -414,7 +477,7 @@ $("copy").addEventListener("click", async () => {
 
     await navigator.clipboard.writeText(text);
 
-    $("status").textContent = "복사 완료!";
+    $("status").textContent = "전체 복사 완료!";
 
   } catch (error) {
 
@@ -423,7 +486,7 @@ $("copy").addEventListener("click", async () => {
     const success = document.execCommand("copy");
 
     $("status").textContent = success
-      ? "복사 완료!"
+      ? "전체 복사 완료!"
       : "복사에 실패했습니다.";
 
   }
@@ -434,7 +497,7 @@ $("copy").addEventListener("click", async () => {
 // 초기화
 $("clear").addEventListener("click", () => {
 
-  version++;
+  generation++;
 
   queue.length = 0;
 
