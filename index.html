@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Spotify 텍스트 추출기</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -48,7 +49,7 @@ p {
   padding: 20px;
   text-align: center;
   outline: none;
-  cursor: pointer;
+  cursor: text;
 }
 
 #pasteArea:focus {
@@ -211,7 +212,6 @@ pasteArea.addEventListener("click", () => {
 
 // 이미지 파일 선택
 fileInput.addEventListener("change", event => {
-
   const file = event.target.files[0];
 
   if (file) {
@@ -219,7 +219,6 @@ fileInput.addEventListener("change", event => {
   }
 
   fileInput.value = "";
-
 });
 
 
@@ -238,26 +237,20 @@ document.addEventListener("paste", event => {
       item.kind === "file" &&
       item.type.startsWith("image/")
     ) {
-
       file = item.getAsFile();
       break;
-
     }
 
   }
 
   if (!file && clipboard.files) {
-
     file = Array.from(clipboard.files)
       .find(f => f.type.startsWith("image/"));
-
   }
 
   if (file) {
-
     event.preventDefault();
     loadImage(file);
-
   }
 
 });
@@ -269,7 +262,6 @@ pasteArea.addEventListener("dragover", event => {
 });
 
 pasteArea.addEventListener("drop", event => {
-
   event.preventDefault();
 
   const file = Array.from(event.dataTransfer.files)
@@ -278,7 +270,6 @@ pasteArea.addEventListener("drop", event => {
   if (file) {
     loadImage(file);
   }
-
 });
 
 
@@ -307,8 +298,7 @@ async function loadImage(file) {
     selectionCanvas.height = bitmap.height;
 
     imageCtx.clearRect(
-      0,
-      0,
+      0, 0,
       imageCanvas.width,
       imageCanvas.height
     );
@@ -334,7 +324,7 @@ async function loadImage(file) {
 }
 
 
-// 마우스 좌표를 원본 이미지 좌표로 변환
+// 마우스 좌표 → 원본 이미지 좌표
 function getPoint(event) {
 
   const rect = selectionCanvas.getBoundingClientRect();
@@ -346,17 +336,8 @@ function getPoint(event) {
   const y = (event.clientY - rect.top) * scaleY;
 
   return {
-
-    x: Math.max(
-      0,
-      Math.min(x, selectionCanvas.width)
-    ),
-
-    y: Math.max(
-      0,
-      Math.min(y, selectionCanvas.height)
-    )
-
+    x: Math.max(0, Math.min(x, selectionCanvas.width)),
+    y: Math.max(0, Math.min(y, selectionCanvas.height))
   };
 
 }
@@ -366,8 +347,7 @@ function getPoint(event) {
 function clearSelection() {
 
   selectionCtx.clearRect(
-    0,
-    0,
+    0, 0,
     selectionCanvas.width,
     selectionCanvas.height
   );
@@ -375,7 +355,7 @@ function clearSelection() {
 }
 
 
-// 선택 박스 그리기
+// 선택 박스 표시
 function drawSelection(start, end) {
 
   clearSelection();
@@ -399,9 +379,7 @@ function drawSelection(start, end) {
 // 드래그 시작
 selectionCanvas.addEventListener("pointerdown", event => {
 
-  if (!imageCanvas.width || !imageCanvas.height) {
-    return;
-  }
+  if (!imageCanvas.width || !imageCanvas.height) return;
 
   event.preventDefault();
 
@@ -422,9 +400,7 @@ selectionCanvas.addEventListener("pointermove", event => {
 
   event.preventDefault();
 
-  const endPoint = getPoint(event);
-
-  drawSelection(startPoint, endPoint);
+  drawSelection(startPoint, getPoint(event));
 
 });
 
@@ -450,9 +426,7 @@ selectionCanvas.addEventListener("pointerup", event => {
 
   clearSelection();
 
-  if (width < 5 || height < 5) {
-    return;
-  }
+  if (width < 5 || height < 5) return;
 
   addSelectionTask(x, y, width, height);
 
@@ -461,30 +435,44 @@ selectionCanvas.addEventListener("pointerup", event => {
 
 // 드래그 취소
 selectionCanvas.addEventListener("pointercancel", () => {
-
   dragging = false;
   startPoint = null;
-
   clearSelection();
-
 });
 
 
 // 선택 영역 OCR 작업 등록
 function addSelectionTask(x, y, width, height) {
 
-  const sx = Math.floor(x);
-  const sy = Math.floor(y);
+  /*
+    드래그 영역 주변에 8픽셀 여백을 추가합니다.
+    이미지 경계 밖으로는 나가지 않습니다.
+  */
 
-  const sw = Math.min(
-    imageCanvas.width - sx,
-    Math.ceil(width)
+  const padding = 8;
+
+  const sx = Math.max(
+    0,
+    Math.floor(x) - padding
   );
 
-  const sh = Math.min(
-    imageCanvas.height - sy,
-    Math.ceil(height)
+  const sy = Math.max(
+    0,
+    Math.floor(y) - padding
   );
+
+  const ex = Math.min(
+    imageCanvas.width,
+    Math.ceil(x + width) + padding
+  );
+
+  const ey = Math.min(
+    imageCanvas.height,
+    Math.ceil(y + height) + padding
+  );
+
+  const sw = ex - sx;
+  const sh = ey - sy;
 
   if (sw <= 0 || sh <= 0) return;
 
@@ -496,20 +484,14 @@ function addSelectionTask(x, y, width, height) {
   const ctx = cropCanvas.getContext("2d");
 
   /*
-    원본 이미지를 그대로 잘라냅니다.
-    흑백 변환, 색상 변경, 확대 없음.
+    원본 색상·해상도 그대로 잘라냅니다.
+    흑백 변환이나 확대는 하지 않습니다.
   */
 
   ctx.drawImage(
     imageCanvas,
-    sx,
-    sy,
-    sw,
-    sh,
-    0,
-    0,
-    sw,
-    sh
+    sx, sy, sw, sh,
+    0, 0, sw, sh
   );
 
   tasks.push({
@@ -535,11 +517,9 @@ async function getWorker() {
   workerPromise = (async () => {
 
     if (typeof Tesseract === "undefined") {
-
       throw new Error(
         "OCR 라이브러리를 불러오지 못했습니다."
       );
-
     }
 
     const newWorker = await Tesseract.createWorker(
@@ -547,16 +527,14 @@ async function getWorker() {
       1
     );
 
+    /*
+      이전 OCR 설정으로 복구.
+      PSM 7(단일 행 강제 인식) 사용하지 않음.
+    */
+
     await newWorker.setParameters({
-
-      /*
-        선택한 영역을 한 줄로 인식
-      */
-
-      tessedit_pageseg_mode: "7",
-
+      tessedit_pageseg_mode: "3",
       preserve_interword_spaces: "0"
-
     });
 
     worker = newWorker;
@@ -566,14 +544,10 @@ async function getWorker() {
   })();
 
   try {
-
     return await workerPromise;
-
   } catch (error) {
-
     workerPromise = null;
     throw error;
-
   }
 
 }
@@ -608,7 +582,8 @@ async function processTasks() {
       }
 
       /*
-        선택 영역 결과는 한 줄로 출력
+        인식 결과의 줄바꿈만 제거.
+        단어 사이 공백은 유지합니다.
       */
 
       const text = (response.data.text || "")
@@ -657,17 +632,13 @@ async function processTasks() {
 $("copy").addEventListener("click", async () => {
 
   if (!resultEl.value.trim()) {
-
     alert("복사할 내용이 없습니다.");
     return;
-
   }
 
   try {
 
-    await navigator.clipboard.writeText(
-      resultEl.value
-    );
+    await navigator.clipboard.writeText(resultEl.value);
 
     statusEl.textContent = "전체 복사 완료!";
 
@@ -690,7 +661,6 @@ $("copy").addEventListener("click", async () => {
 $("clear").addEventListener("click", () => {
 
   imageVersion++;
-
   tasks.length = 0;
 
   resultEl.value = "";
@@ -700,13 +670,6 @@ $("clear").addEventListener("click", () => {
   startPoint = null;
 
   clearSelection();
-
-  imageCtx.clearRect(
-    0,
-    0,
-    imageCanvas.width,
-    imageCanvas.height
-  );
 
   imageCanvas.width = 0;
   imageCanvas.height = 0;
