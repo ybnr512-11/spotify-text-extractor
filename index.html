@@ -69,29 +69,6 @@ button:disabled {
   color: white;
 }
 
-#languageBox {
-  margin-top: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-#languageBox label {
-  color: #ddd;
-  font-size: 14px;
-}
-
-#language {
-  padding: 10px 12px;
-  background: #151515;
-  color: white;
-  border: 1px solid #555;
-  border-radius: 7px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
 #imageContainer {
   position: relative;
   display: none;
@@ -214,6 +191,7 @@ button:disabled {
 <p>
 전체 화면을 캡처해서 붙여넣은 뒤,
 추출할 글자 부분을 마우스로 드래그하세요.
+영어·한국어·일본어·스페인어·포르투갈어를 자동으로 인식합니다.
 </p>
 
 <section class="panel">
@@ -227,28 +205,6 @@ button:disabled {
     type="file"
     accept="image/*"
   >
-
-  <div id="languageBox">
-    <label for="language">🌐 인식 언어</label>
-
-    <select id="language">
-      <option value="kor+eng">
-        기본 (한국어 + 영어)
-      </option>
-
-      <option value="jpn+eng">
-        일본어 (일본어 + 영어)
-      </option>
-
-      <option value="spa+por+eng">
-        라틴 음악 (스페인어 + 포르투갈어 + 영어)
-      </option>
-
-      <option value="kor+eng+jpn+spa+por">
-        전체 언어
-      </option>
-    </select>
-  </div>
 
   <div id="imageContainer">
 
@@ -337,14 +293,6 @@ const review = $("review");
 const reviewText = $("reviewText");
 const reviewMessage = $("reviewMessage");
 
-const languageSelect = $("language");
-
-let worker = null;
-let workerPromise = null;
-
-let workerLanguage = null;
-let workerLoadingLanguage = null;
-
 let imageURL = null;
 
 let dragging = false;
@@ -352,12 +300,22 @@ let startX = 0;
 let startY = 0;
 
 let imageVersion = 0;
-let requestVersion = 0;
 
 let lastSelection = null;
 
 const tasks = [];
 let processing = false;
+
+// 자동 인식에 사용할 언어
+const OCR_LANGUAGES = [
+  "kor+eng",
+  "jpn+eng",
+  "spa+por+eng"
+];
+
+// 언어별 OCR 엔진 보관
+const workers = new Map();
+const workerPromises = new Map();
 
 
 // 붙여넣기 영역 클릭
@@ -437,7 +395,6 @@ function hideReview() {
 function loadImage(file) {
 
   imageVersion++;
-  requestVersion++;
 
   tasks.length = 0;
 
@@ -578,53 +535,18 @@ selectionLayer.addEventListener("pointercancel", () => {
 });
 
 
-// 언어 변경 시 기존 결과와 이미지는 유지
-languageSelect.addEventListener("change", () => {
-
-  statusEl.textContent =
-    "인식 언어가 변경되었습니다. 다음 드래그부터 적용됩니다.";
-
-});
-
-
-// OCR 엔진 준비
+// 언어별 OCR 엔진 준비
 async function getWorker(language) {
 
-  if (worker && workerLanguage === language) {
-    return worker;
+  if (workers.has(language)) {
+    return workers.get(language);
   }
 
-  if (
-    workerPromise &&
-    workerLoadingLanguage === language
-  ) {
-    return workerPromise;
+  if (workerPromises.has(language)) {
+    return workerPromises.get(language);
   }
 
-  if (workerPromise) {
-    try {
-      await workerPromise;
-    } catch (error) {
-      // 실패한 엔진은 아래에서 다시 생성
-    }
-  }
-
-  if (worker && workerLanguage !== language) {
-
-    await worker.terminate();
-
-    worker = null;
-    workerLanguage = null;
-
-  }
-
-  if (worker && workerLanguage === language) {
-    return worker;
-  }
-
-  workerLoadingLanguage = language;
-
-  workerPromise = (async () => {
+  const promise = (async () => {
 
     if (typeof Tesseract === "undefined") {
       throw new Error(
@@ -636,6 +558,7 @@ async function getWorker(language) {
       language
     );
 
+    // 기존 OCR 설정 그대로 유지
     await newWorker.setParameters({
 
       tessedit_pageseg_mode: "7",
@@ -644,23 +567,21 @@ async function getWorker(language) {
 
     });
 
-    worker = newWorker;
-    workerLanguage = language;
+    workers.set(language, newWorker);
 
-    return worker;
+    return newWorker;
 
   })();
 
+  workerPromises.set(language, promise);
+
   try {
 
-    return await workerPromise;
+    return await promise;
 
-  } catch (error) {
+  } finally {
 
-    workerPromise = null;
-    workerLoadingLanguage = null;
-
-    throw error;
+    workerPromises.delete(language);
 
   }
 
@@ -696,6 +617,7 @@ function recognizeSelection(left, top, width, height) {
 
   const ctx = canvas.getContext("2d");
 
+  // 기존 이미지 자르기 방식 유지
   ctx.drawImage(
     sourceImage,
     cropX,
@@ -748,13 +670,11 @@ function addTask(canvas) {
 
   tasks.push({
     canvas,
-    version: imageVersion,
-    request: ++requestVersion,
-    language: languageSelect.value
+    version: imageVersion
   });
 
   statusEl.textContent =
-    "선택한 영역을 인식 중...";
+    "선택한 영역을 자동 인식 중...";
 
   processTasks();
 
@@ -785,15 +705,16 @@ function normalizeText(text) {
 }
 
 
-// 기호 위주 결과인지 확인
+// 모든 언어의 문자 인정
 function isMostlySymbols(text) {
 
-  // 수정: 일본어·한자·스페인어·포르투갈어도 정상 글자로 인정
   const letters = (
     text.match(/[\p{L}\p{N}]/gu) || []
   ).length;
 
-  const visible = text.replace(/\s/g, "").length;
+  const visible = Array.from(
+    text.replace(/\s/g, "")
+  ).length;
 
   if (!visible) {
     return true;
@@ -820,6 +741,7 @@ function validateResult(response) {
     return {
       accepted: false,
       text: "",
+      confidence: 0,
       reason: "글자가 인식되지 않았습니다."
     };
 
@@ -830,6 +752,7 @@ function validateResult(response) {
     return {
       accepted: false,
       text,
+      confidence,
       reason: "기호가 너무 많아 자동 추가하지 않았습니다."
     };
 
@@ -843,6 +766,7 @@ function validateResult(response) {
     return {
       accepted: false,
       text,
+      confidence,
       reason:
         `인식 신뢰도가 낮습니다. (${confidence.toFixed(0)}점)`
     };
@@ -852,8 +776,162 @@ function validateResult(response) {
   return {
     accepted: true,
     text,
+    confidence,
     reason: ""
   };
+
+}
+
+
+// 일본어 문자가 실제로 있는지 확인
+function hasJapanese(text) {
+
+  return /[\u3040-\u30ff\u3400-\u9fff]/u.test(text);
+
+}
+
+
+// 스페인어·포르투갈어 특수 문자 확인
+function hasLatinAccent(text) {
+
+  return /[áéíóúüñãõâêôàçÁÉÍÓÚÜÑÃÕÂÊÔÀÇ]/u.test(text);
+
+}
+
+
+// OCR 후보 점수 계산
+function scoreCandidate(candidate, language) {
+
+  if (!candidate.text) {
+    return -1000;
+  }
+
+  let score = Number.isFinite(candidate.confidence)
+    ? candidate.confidence
+    : 0;
+
+  if (isMostlySymbols(candidate.text)) {
+    score -= 50;
+  }
+
+  // 일본어가 실제로 검출되면 일본어 결과 우대
+  if (
+    language === "jpn+eng" &&
+    hasJapanese(candidate.text)
+  ) {
+    score += 15;
+  }
+
+  // 스페인어·포르투갈어 고유 문자가 있으면 우대
+  if (
+    language === "spa+por+eng" &&
+    hasLatinAccent(candidate.text)
+  ) {
+    score += 10;
+  }
+
+  return score;
+
+}
+
+
+// 자동 언어 인식
+async function recognizeAutomatically(canvas, version) {
+
+  const candidates = [];
+
+  // 1차: 기존 한국어 + 영어 OCR
+  const defaultWorker = await getWorker(
+    "kor+eng"
+  );
+
+  const defaultResponse = await defaultWorker.recognize(
+    canvas
+  );
+
+  if (version !== imageVersion) {
+    return null;
+  }
+
+  const defaultCandidate = validateResult(
+    defaultResponse
+  );
+
+  candidates.push({
+    ...defaultCandidate,
+    language: "kor+eng"
+  });
+
+  /*
+    기존 OCR 결과가 충분히 확실하면
+    그대로 사용해 영어 인식 품질을 유지합니다.
+
+    불확실할 때만 일본어와 라틴 음악 언어를
+    추가로 인식합니다.
+  */
+
+  if (
+    defaultCandidate.accepted &&
+    defaultCandidate.confidence >= 85
+  ) {
+
+    return defaultCandidate;
+
+  }
+
+  // 2차: 일본어 + 영어
+  statusEl.textContent =
+    "일본어 포함 여부 확인 중...";
+
+  const japaneseWorker = await getWorker(
+    "jpn+eng"
+  );
+
+  const japaneseResponse = await japaneseWorker.recognize(
+    canvas
+  );
+
+  if (version !== imageVersion) {
+    return null;
+  }
+
+  candidates.push({
+    ...validateResult(japaneseResponse),
+    language: "jpn+eng"
+  });
+
+  // 3차: 스페인어 + 포르투갈어 + 영어
+  statusEl.textContent =
+    "라틴 음악 언어 확인 중...";
+
+  const latinWorker = await getWorker(
+    "spa+por+eng"
+  );
+
+  const latinResponse = await latinWorker.recognize(
+    canvas
+  );
+
+  if (version !== imageVersion) {
+    return null;
+  }
+
+  candidates.push({
+    ...validateResult(latinResponse),
+    language: "spa+por+eng"
+  });
+
+  // 가장 적합한 결과 선택
+  candidates.sort((a, b) => {
+
+    return (
+      scoreCandidate(b, b.language) -
+      scoreCandidate(a, a.language)
+    );
+
+  });
+
+  return candidates[0];
 
 }
 
@@ -905,25 +983,24 @@ async function processTasks() {
 
       const task = tasks.shift();
 
+      if (task.version !== imageVersion) {
+        continue;
+      }
+
       statusEl.textContent =
-        "선택한 영역 글자 인식 중...";
+        "선택한 영역 글자 자동 인식 중...";
 
-      const ocrWorker = await getWorker(
-        task.language
-      );
-
-      const response = await ocrWorker.recognize(
-        task.canvas
+      const validation = await recognizeAutomatically(
+        task.canvas,
+        task.version
       );
 
       if (
         task.version !== imageVersion ||
-        task.request !== requestVersion
+        !validation
       ) {
         continue;
       }
-
-      const validation = validateResult(response);
 
       if (validation.accepted) {
 
@@ -960,6 +1037,11 @@ async function processTasks() {
   } finally {
 
     processing = false;
+
+    // 처리 종료 직전에 새 작업이 들어왔을 경우
+    if (tasks.length) {
+      processTasks();
+    }
 
   }
 
@@ -1035,7 +1117,6 @@ $("copy").addEventListener("click", async () => {
 $("clear").addEventListener("click", () => {
 
   imageVersion++;
-  requestVersion++;
 
   tasks.length = 0;
 
