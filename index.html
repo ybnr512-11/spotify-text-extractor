@@ -134,31 +134,6 @@ button:disabled {
 #pasteArea:focus {
   background: #292929;
 }
-
-#review {
-  display: none;
-  margin-top: 12px;
-  padding: 12px;
-  background: #302719;
-  border: 1px solid #8d672d;
-  border-radius: 8px;
-}
-
-#reviewText {
-  width: 100%;
-  padding: 10px;
-  margin-top: 8px;
-  background: #151515;
-  color: white;
-  border: 1px solid #666;
-  border-radius: 6px;
-  font-size: 15px;
-}
-
-#reviewMessage {
-  color: #f1c27d;
-  line-height: 1.6;
-}
 </style>
 </head>
 
@@ -198,31 +173,6 @@ button:disabled {
 
   <div id="status">이미지를 넣어주세요.</div>
 
-  <button id="retry" class="secondary" disabled>
-    🔄 마지막 영역 다시 인식
-  </button>
-
-  <div id="review">
-    <div id="reviewMessage">
-      인식 결과를 확인해주세요.
-    </div>
-
-    <input
-      id="reviewText"
-      type="text"
-      spellcheck="false"
-      placeholder="필요하면 직접 수정하세요."
-    >
-
-    <button id="accept">
-      결과 추가
-    </button>
-
-    <button id="discard" class="secondary">
-      버리기
-    </button>
-  </div>
-
 </section>
 
 <section class="panel">
@@ -260,12 +210,6 @@ const selection = $("selection");
 const statusEl = $("status");
 const resultEl = $("result");
 
-const retryButton = $("retry");
-
-const review = $("review");
-const reviewText = $("reviewText");
-const reviewMessage = $("reviewMessage");
-
 let imageURL = null;
 
 let dragging = false;
@@ -275,17 +219,10 @@ let startY = 0;
 let imageVersion = 0;
 let selectionVersion = 0;
 
-let lastSelection = null;
-
 const tasks = [];
 let processing = false;
 
-const OCR_LANGUAGES = [
-  "kor+eng",
-  "jpn+eng",
-  "spa+por+eng"
-];
-
+// 언어별 OCR 엔진 보관
 const workers = new Map();
 const workerPromises = new Map();
 
@@ -354,15 +291,6 @@ pasteArea.addEventListener("drop", event => {
 });
 
 
-// 검토창 닫기
-function hideReview() {
-
-  review.style.display = "none";
-  reviewText.value = "";
-
-}
-
-
 // 이미지 불러오기
 function loadImage(file) {
 
@@ -370,12 +298,7 @@ function loadImage(file) {
   selectionVersion++;
 
   tasks.length = 0;
-
-  lastSelection = null;
-
-  retryButton.disabled = true;
-
-  hideReview();
+  resultEl.value = "";
 
   dragging = false;
   selection.style.display = "none";
@@ -493,9 +416,10 @@ selectionLayer.addEventListener("pointerup", event => {
     return;
   }
 
+  // 새 드래그 시 이전 추출 결과 초기화
   resultEl.value = "";
-  hideReview();
 
+  // 이전 OCR 작업 결과 무효화
   selectionVersion++;
   tasks.length = 0;
 
@@ -536,6 +460,7 @@ async function getWorker(language) {
       language
     );
 
+    // 기존 OCR 설정 유지
     await newWorker.setParameters({
 
       tessedit_pageseg_mode: "7",
@@ -594,6 +519,7 @@ function recognizeSelection(left, top, width, height) {
 
   const ctx = canvas.getContext("2d");
 
+  // 기존 이미지 자르기 방식 유지
   ctx.drawImage(
     sourceImage,
     cropX,
@@ -605,12 +531,6 @@ function recognizeSelection(left, top, width, height) {
     cropWidth,
     cropHeight
   );
-
-  lastSelection = canvas;
-
-  retryButton.disabled = false;
-
-  hideReview();
 
   addTask(canvas);
 
@@ -632,20 +552,6 @@ function addTask(canvas) {
   processTasks();
 
 }
-
-
-// 마지막 영역 다시 인식
-retryButton.addEventListener("click", () => {
-
-  if (!lastSelection) {
-    return;
-  }
-
-  hideReview();
-
-  addTask(lastSelection);
-
-});
 
 
 // 인식 결과를 한 줄로 정리
@@ -678,7 +584,7 @@ function isMostlySymbols(text) {
 }
 
 
-// 결과 검증
+// 결과 정리
 function validateResult(response) {
 
   const text = normalizeText(
@@ -689,33 +595,9 @@ function validateResult(response) {
     response.data.confidence
   );
 
-  if (!text) {
-
-    return {
-      accepted: false,
-      text: "",
-      confidence: 0,
-      reason: "글자가 인식되지 않았습니다."
-    };
-
-  }
-
-  if (isMostlySymbols(text)) {
-
-    return {
-      accepted: false,
-      text,
-      confidence,
-      reason: "기호가 너무 많아 자동 추가하지 않았습니다."
-    };
-
-  }
-
   return {
-    accepted: true,
     text,
-    confidence,
-    reason: ""
+    confidence
   };
 
 }
@@ -776,9 +658,17 @@ async function recognizeAutomatically(canvas, version, selectionId) {
 
   const candidates = [];
 
+  // 1차: 기존 한국어 + 영어 OCR
   const defaultWorker = await getWorker(
     "kor+eng"
   );
+
+  if (
+    version !== imageVersion ||
+    selectionId !== selectionVersion
+  ) {
+    return null;
+  }
 
   const defaultResponse = await defaultWorker.recognize(
     canvas
@@ -800,8 +690,11 @@ async function recognizeAutomatically(canvas, version, selectionId) {
     language: "kor+eng"
   });
 
+  // 기존 결과의 신뢰도가 높으면 그대로 사용
+  // 신뢰도는 내부 언어 비교에만 사용하며 화면에 표시하지 않음
   if (
-    defaultCandidate.accepted &&
+    defaultCandidate.text &&
+    !isMostlySymbols(defaultCandidate.text) &&
     defaultCandidate.confidence >= 85
   ) {
 
@@ -809,12 +702,20 @@ async function recognizeAutomatically(canvas, version, selectionId) {
 
   }
 
+  // 2차: 일본어 + 영어
   statusEl.textContent =
     "일본어 포함 여부 확인 중...";
 
   const japaneseWorker = await getWorker(
     "jpn+eng"
   );
+
+  if (
+    version !== imageVersion ||
+    selectionId !== selectionVersion
+  ) {
+    return null;
+  }
 
   const japaneseResponse = await japaneseWorker.recognize(
     canvas
@@ -832,12 +733,20 @@ async function recognizeAutomatically(canvas, version, selectionId) {
     language: "jpn+eng"
   });
 
+  // 3차: 스페인어 + 포르투갈어 + 영어
   statusEl.textContent =
     "라틴 음악 언어 확인 중...";
 
   const latinWorker = await getWorker(
     "spa+por+eng"
   );
+
+  if (
+    version !== imageVersion ||
+    selectionId !== selectionVersion
+  ) {
+    return null;
+  }
 
   const latinResponse = await latinWorker.recognize(
     canvas
@@ -855,6 +764,7 @@ async function recognizeAutomatically(canvas, version, selectionId) {
     language: "spa+por+eng"
   });
 
+  // 가장 적합한 결과 선택
   candidates.sort((a, b) => {
 
     return (
@@ -869,36 +779,13 @@ async function recognizeAutomatically(canvas, version, selectionId) {
 }
 
 
-// 결과 추가
-function appendResult(text) {
+// 결과 표시
+function showResult(text) {
 
-  const cleaned = normalizeText(text);
+  // 이전 결과를 누적하지 않고 교체
+  resultEl.value = normalizeText(text);
 
-  if (!cleaned) {
-    return;
-  }
-
-  if (resultEl.value) {
-    resultEl.value += "\n";
-  }
-
-  resultEl.value += cleaned;
-
-  resultEl.scrollTop =
-    resultEl.scrollHeight;
-
-}
-
-
-// 검토창 표시
-function showReview(text, reason) {
-
-  review.style.display = "block";
-
-  reviewMessage.textContent =
-    reason + " 아래 내용을 확인한 뒤 추가하거나 버리세요.";
-
-  reviewText.value = text;
+  resultEl.scrollTop = 0;
 
 }
 
@@ -940,26 +827,12 @@ async function processTasks() {
         continue;
       }
 
-      if (validation.accepted) {
+      // 신뢰도와 관계없이 인식 결과를 바로 표시
+      showResult(validation.text);
 
-        hideReview();
-
-        appendResult(validation.text);
-
-        statusEl.textContent =
-          "인식 완료. 다음 영역을 드래그하세요.";
-
-      } else {
-
-        showReview(
-          validation.text,
-          validation.reason
-        );
-
-        statusEl.textContent =
-          "인식 결과 확인 필요. 자동 추가하지 않았습니다.";
-
-      }
+      statusEl.textContent = validation.text
+        ? "인식 완료. 다음 영역을 드래그하세요."
+        : "글자가 인식되지 않았습니다. 다른 영역을 드래그해보세요.";
 
     }
 
@@ -983,38 +856,6 @@ async function processTasks() {
   }
 
 }
-
-
-// 검토 결과 직접 추가
-$("accept").addEventListener("click", () => {
-
-  const text = normalizeText(
-    reviewText.value
-  );
-
-  if (!text) {
-    return;
-  }
-
-  appendResult(text);
-
-  hideReview();
-
-  statusEl.textContent =
-    "확인한 결과를 추가했습니다.";
-
-});
-
-
-// 검토 결과 버리기
-$("discard").addEventListener("click", () => {
-
-  hideReview();
-
-  statusEl.textContent =
-    "인식 결과를 버렸습니다.";
-
-});
 
 
 // 전체 복사
@@ -1063,12 +904,6 @@ $("clear").addEventListener("click", () => {
   dragging = false;
 
   selection.style.display = "none";
-
-  lastSelection = null;
-
-  retryButton.disabled = true;
-
-  hideReview();
 
   statusEl.textContent =
     "초기화 완료. 이미지를 넣어주세요.";
