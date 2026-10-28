@@ -8,13 +8,11 @@
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <style>
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
-  padding: 25px 18px;
+  padding: 24px 16px;
   background: #121212;
   color: white;
   font-family: Arial, sans-serif;
@@ -25,9 +23,7 @@ main {
   margin: auto;
 }
 
-h1 {
-  color: #1ed760;
-}
+h1 { color: #1ed760; }
 
 p {
   color: #aaa;
@@ -42,21 +38,19 @@ p {
 }
 
 #drop {
-  display: block;
   border: 2px dashed #1ed760;
   border-radius: 10px;
   padding: 30px 20px;
   text-align: center;
-  cursor: pointer;
 }
 
-#drop:hover {
-  background: #292929;
+#drop.dragging {
+  background: #303030;
 }
 
 #file {
   display: block;
-  margin: 15px auto 0;
+  margin: 15px auto;
   max-width: 100%;
   color: white;
 }
@@ -82,18 +76,17 @@ button.secondary {
   max-width: 100%;
   max-height: 250px;
   margin-top: 15px;
-  border-radius: 8px;
 }
 
 #status {
-  color: #1ed760;
   margin-top: 15px;
+  color: #1ed760;
   white-space: pre-wrap;
 }
 
 #result {
   width: 100%;
-  height: 450px;
+  height: 500px;
   padding: 15px;
   background: #151515;
   color: white;
@@ -103,6 +96,7 @@ button.secondary {
   font-size: 14px;
   line-height: 1.8;
   resize: vertical;
+  white-space: pre-wrap;
 }
 </style>
 </head>
@@ -122,14 +116,8 @@ Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣거나
 
   <div id="drop">
     <h3>📋 Ctrl + V로 이미지 붙여넣기</h3>
-    <p>또는 아래에서 이미지 파일 선택</p>
-
-    <input
-      id="file"
-      type="file"
-      accept="image/*"
-      multiple
-    >
+    <p>또는 이미지 파일 선택</p>
+    <input id="file" type="file" accept="image/*" multiple>
   </div>
 
   <img id="preview" alt="이미지 미리보기">
@@ -145,13 +133,11 @@ Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣거나
   <button id="copy">📋 전체 복사</button>
   <button id="clear" class="secondary">초기화</button>
 
-  <p>여러 장을 넣으면 결과가 계속 추가됩니다.</p>
-
   <textarea
     id="result"
     readonly
     spellcheck="false"
-    placeholder="추출된 텍스트가 여기에 표시됩니다."
+    placeholder="인식된 텍스트가 한 영역씩 한 줄로 표시됩니다."
   ></textarea>
 
 </section>
@@ -164,212 +150,402 @@ Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣거나
 const fileInput = document.getElementById("file");
 const drop = document.getElementById("drop");
 const preview = document.getElementById("preview");
-const status = document.getElementById("status");
-const result = document.getElementById("result");
-const copyButton = document.getElementById("copy");
-const clearButton = document.getElementById("clear");
+const statusEl = document.getElementById("status");
+const resultEl = document.getElementById("result");
+
+const queue = [];
 
 let worker = null;
 let processing = false;
 let generation = 0;
 let previewURL = null;
 
-const queue = [];
 
 // 파일 선택
-fileInput.addEventListener("change", function () {
+fileInput.addEventListener("change", () => {
   addImages(Array.from(fileInput.files));
   fileInput.value = "";
 });
 
-// Ctrl + V 이미지 붙여넣기
-document.addEventListener("paste", function (event) {
-  const clipboard = event.clipboardData;
 
-  if (!clipboard) return;
+// Ctrl + V 붙여넣기
+document.addEventListener("paste", event => {
 
-  const images = [];
+  const items = Array.from(
+    event.clipboardData?.items || []
+  );
 
-  for (const item of clipboard.items) {
-    if (item.type.startsWith("image/")) {
-      const file = item.getAsFile();
+  const images = items
+    .filter(item => item.type.startsWith("image/"))
+    .map(item => item.getAsFile())
+    .filter(Boolean);
 
-      if (file) {
-        images.push(file);
-      }
-    }
-  }
-
-  if (images.length > 0) {
+  if (images.length) {
     event.preventDefault();
     addImages(images);
   }
+
 });
 
-// 이미지 드래그 앤 드롭
-drop.addEventListener("dragover", function (event) {
+
+// 드래그 앤 드롭
+drop.addEventListener("dragover", event => {
   event.preventDefault();
+  drop.classList.add("dragging");
 });
 
-drop.addEventListener("drop", function (event) {
+drop.addEventListener("dragleave", () => {
+  drop.classList.remove("dragging");
+});
+
+drop.addEventListener("drop", event => {
   event.preventDefault();
+  drop.classList.remove("dragging");
 
-  const files = Array.from(event.dataTransfer.files);
-  addImages(files);
+  addImages(Array.from(event.dataTransfer.files));
 });
+
 
 // 이미지 추가
 function addImages(files) {
-  const images = files.filter(function (file) {
-    return file && file.type.startsWith("image/");
-  });
 
-  if (images.length === 0) {
-    status.textContent = "이미지 파일을 선택해주세요.";
-    return;
-  }
+  const images = files.filter(file =>
+    file && file.type.startsWith("image/")
+  );
 
-  // OCR 실행 전에 미리보기부터 표시
+  if (!images.length) return;
+
   showPreview(images[0]);
 
   queue.push(...images);
 
-  status.textContent =
-    "이미지 " + images.length + "장 추가 완료. 인식 준비 중...";
+  statusEl.textContent =
+    `이미지 ${images.length}장 추가 완료`;
 
   processQueue();
 }
 
-// 이미지 미리보기
+
+// 미리보기
 function showPreview(file) {
+
   if (previewURL) {
     URL.revokeObjectURL(previewURL);
   }
 
   previewURL = URL.createObjectURL(file);
+
   preview.src = previewURL;
   preview.style.display = "block";
 }
 
-// OCR 엔진 준비
-async function getWorker() {
-  if (worker) return worker;
 
-  if (typeof Tesseract === "undefined") {
-    throw new Error(
-      "OCR 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해주세요."
-    );
+// OCR 결과에서 텍스트 영역별 추출
+function extractRegions(data) {
+
+  const blocks = data.blocks || [];
+
+  const regions = [];
+
+  /*
+    Tesseract가 인식한 텍스트 줄을 사용한다.
+
+    하나의 줄에서 단어 사이에 큰 간격이 있으면
+    서로 다른 텍스트 영역으로 분리한다.
+
+    예:
+    Back To You        Things I Never Said
+
+    출력:
+    Back To You
+    Things I Never Said
+  */
+
+  for (const block of blocks) {
+
+    for (const paragraph of (block.paragraphs || [])) {
+
+      for (const line of (paragraph.lines || [])) {
+
+        const words = (line.words || [])
+          .filter(word => word.text?.trim())
+          .sort((a, b) =>
+            a.bbox.x0 - b.bbox.x0
+          );
+
+        if (!words.length) continue;
+
+        const heights = words.map(word =>
+          Math.max(
+            1,
+            word.bbox.y1 - word.bbox.y0
+          )
+        );
+
+        const averageHeight =
+          heights.reduce((a, b) => a + b, 0) /
+          heights.length;
+
+        /*
+          단어 사이 간격이 글자 높이의
+          1.5배 이상이면 다른 영역으로 판단.
+        */
+
+        const gapLimit = averageHeight * 1.5;
+
+        let current = [];
+        let previous = null;
+
+        for (const word of words) {
+
+          if (previous) {
+
+            const gap =
+              word.bbox.x0 - previous.bbox.x1;
+
+            if (gap > gapLimit) {
+
+              if (current.length) {
+
+                regions.push({
+                  text: current
+                    .map(w => w.text)
+                    .join(" ")
+                    .trim(),
+
+                  x: current[0].bbox.x0,
+                  y: Math.min(
+                    ...current.map(w => w.bbox.y0)
+                  )
+                });
+
+              }
+
+              current = [];
+            }
+
+          }
+
+          current.push(word);
+          previous = word;
+        }
+
+        if (current.length) {
+
+          regions.push({
+            text: current
+              .map(w => w.text)
+              .join(" ")
+              .trim(),
+
+            x: current[0].bbox.x0,
+            y: Math.min(
+              ...current.map(w => w.bbox.y0)
+            )
+          });
+
+        }
+
+      }
+
+    }
+
   }
 
-  status.textContent = "한국어·영어 OCR 엔진 준비 중...";
+  /*
+    화면에서 위쪽 → 아래쪽 순서.
+    같은 높이에서는 왼쪽 → 오른쪽 순서.
+  */
 
-  worker = await Tesseract.createWorker("kor+eng");
+  regions.sort((a, b) => {
 
-  await worker.setParameters({
-    tessedit_pageseg_mode: "3",
-    preserve_interword_spaces: "1"
+    const rowDifference = a.y - b.y;
+
+    if (Math.abs(rowDifference) < 10) {
+      return a.x - b.x;
+    }
+
+    return rowDifference;
+
   });
 
-  return worker;
+  return regions
+    .map(region => region.text)
+    .filter(Boolean)
+    .join("\n");
 }
 
-// 이미지 OCR
+
+// OCR 실행
 async function processQueue() {
+
   if (processing) return;
 
   processing = true;
 
   try {
-    const ocrWorker = await getWorker();
 
-    while (queue.length > 0) {
+    if (typeof Tesseract === "undefined") {
+      throw new Error(
+        "OCR 라이브러리를 불러오지 못했습니다."
+      );
+    }
+
+    if (!worker) {
+
+      statusEl.textContent =
+        "한국어·영어 OCR 엔진 준비 중...";
+
+      worker = await Tesseract.createWorker(
+        "kor+eng",
+        1
+      );
+
+      await worker.setParameters({
+
+        /*
+          자동 페이지 분석
+        */
+        tessedit_pageseg_mode: "3",
+
+        /*
+          불필요한 공백 생성 방지
+        */
+        preserve_interword_spaces: "0"
+
+      });
+
+    }
+
+    while (queue.length) {
+
       const file = queue.shift();
       const currentGeneration = generation;
 
       showPreview(file);
 
-      status.textContent =
-        "글자 인식 중... 남은 이미지: " +
-        (queue.length + 1) + "장";
+      statusEl.textContent = "글자 인식 중...";
 
-      // 원본 이미지를 그대로 인식
-      const response = await ocrWorker.recognize(file);
+      /*
+        원본 이미지 그대로 인식.
+        자르기, 확대, 흑백 변환 없음.
+        
+        blocks 결과를 명시적으로 요청.
+      */
 
-      // 인식 도중 초기화했다면 결과를 추가하지 않음
+      const response = await worker.recognize(
+        file,
+        {},
+        {
+          blocks: true,
+          text: true
+        }
+      );
+
       if (currentGeneration !== generation) {
         continue;
       }
 
-      const text = (response.data.text || "").trim();
+      let text = extractRegions(response.data);
 
-      if (text) {
-        if (result.value.trim()) {
-          result.value += "\n\n";
-        }
+      /*
+        영역 정보가 없으면
+        일반 OCR 텍스트 사용.
+      */
 
-        result.value += text;
-        result.scrollTop = result.scrollHeight;
+      if (!text.trim()) {
+        text = (response.data.text || "").trim();
       }
 
-      status.textContent =
-        "인식 완료! 남은 이미지: " +
-        queue.length + "장";
+      if (text) {
+
+        if (resultEl.value.trim()) {
+          resultEl.value += "\n\n";
+        }
+
+        resultEl.value += text;
+
+        resultEl.scrollTop =
+          resultEl.scrollHeight;
+      }
+
+      statusEl.textContent =
+        `인식 완료! 남은 이미지: ${queue.length}장`;
+
     }
 
   } catch (error) {
+
     console.error(error);
 
-    status.textContent =
+    statusEl.textContent =
       "OCR 오류: " + error.message;
 
-    // 오류가 발생하면 새 이미지로 재시도할 수 있도록 처리
     worker = null;
     queue.length = 0;
 
   } finally {
+
     processing = false;
+
   }
+
 }
 
+
 // 전체 복사
-copyButton.addEventListener("click", async function () {
-  if (!result.value.trim()) {
-    alert("복사할 내용이 없습니다.");
-    return;
-  }
+document.getElementById("copy")
+  .addEventListener("click", async () => {
 
-  try {
-    await navigator.clipboard.writeText(result.value);
-    status.textContent = "전체 복사 완료!";
-  } catch (error) {
-    result.select();
+    const text = resultEl.value;
 
-    const success = document.execCommand("copy");
+    if (!text.trim()) {
+      alert("복사할 내용이 없습니다.");
+      return;
+    }
 
-    status.textContent = success
-      ? "전체 복사 완료!"
-      : "복사에 실패했습니다.";
-  }
-});
+    try {
+
+      await navigator.clipboard.writeText(text);
+
+      statusEl.textContent = "전체 복사 완료!";
+
+    } catch {
+
+      resultEl.select();
+
+      document.execCommand("copy");
+
+      statusEl.textContent = "전체 복사 완료!";
+
+    }
+
+  });
+
 
 // 초기화
-clearButton.addEventListener("click", function () {
-  generation++;
-  queue.length = 0;
+document.getElementById("clear")
+  .addEventListener("click", () => {
 
-  result.value = "";
-  fileInput.value = "";
+    generation++;
 
-  preview.style.display = "none";
-  preview.removeAttribute("src");
+    queue.length = 0;
 
-  if (previewURL) {
-    URL.revokeObjectURL(previewURL);
-    previewURL = null;
-  }
+    resultEl.value = "";
+    fileInput.value = "";
 
-  status.textContent = "초기화 완료.";
-});
+    preview.style.display = "none";
+    preview.removeAttribute("src");
+
+    if (previewURL) {
+      URL.revokeObjectURL(previewURL);
+      previewURL = null;
+    }
+
+    statusEl.textContent = "초기화 완료.";
+
+  });
+
 </script>
 
 </body>
