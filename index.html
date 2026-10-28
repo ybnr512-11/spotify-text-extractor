@@ -135,26 +135,6 @@ button:disabled {
   background: #292929;
 }
 
-#lastPreview {
-  display: none;
-  margin-top: 15px;
-  padding: 12px;
-  background: #151515;
-  border: 1px solid #444;
-  border-radius: 8px;
-}
-
-#lastPreview p {
-  margin: 0 0 10px;
-}
-
-#lastCrop {
-  display: block;
-  max-width: 100%;
-  max-height: 130px;
-  background: #252525;
-}
-
 #review {
   display: none;
   margin-top: 12px;
@@ -222,11 +202,6 @@ button:disabled {
     🔄 마지막 영역 다시 인식
   </button>
 
-  <div id="lastPreview">
-    <p>마지막으로 선택한 영역</p>
-    <canvas id="lastCrop"></canvas>
-  </div>
-
   <div id="review">
     <div id="reviewMessage">
       인식 결과를 확인해주세요.
@@ -286,8 +261,6 @@ const statusEl = $("status");
 const resultEl = $("result");
 
 const retryButton = $("retry");
-const lastPreview = $("lastPreview");
-const lastCrop = $("lastCrop");
 
 const review = $("review");
 const reviewText = $("reviewText");
@@ -300,8 +273,6 @@ let startX = 0;
 let startY = 0;
 
 let imageVersion = 0;
-
-// 새 드래그가 시작될 때 이전 OCR 결과를 무효화
 let selectionVersion = 0;
 
 let lastSelection = null;
@@ -309,14 +280,12 @@ let lastSelection = null;
 const tasks = [];
 let processing = false;
 
-// 자동 인식에 사용할 언어
 const OCR_LANGUAGES = [
   "kor+eng",
   "jpn+eng",
   "spa+por+eng"
 ];
 
-// 언어별 OCR 엔진 보관
 const workers = new Map();
 const workerPromises = new Map();
 
@@ -405,7 +374,6 @@ function loadImage(file) {
   lastSelection = null;
 
   retryButton.disabled = true;
-  lastPreview.style.display = "none";
 
   hideReview();
 
@@ -525,11 +493,9 @@ selectionLayer.addEventListener("pointerup", event => {
     return;
   }
 
-  // 수정 1: 새 영역을 선택하면 이전 추출 결과 초기화
   resultEl.value = "";
   hideReview();
 
-  // 진행 중인 이전 선택의 OCR 결과도 표시하지 않음
   selectionVersion++;
   tasks.length = 0;
 
@@ -570,7 +536,6 @@ async function getWorker(language) {
       language
     );
 
-    // 기존 OCR 설정 그대로 유지
     await newWorker.setParameters({
 
       tessedit_pageseg_mode: "7",
@@ -629,7 +594,6 @@ function recognizeSelection(left, top, width, height) {
 
   const ctx = canvas.getContext("2d");
 
-  // 기존 이미지 자르기 방식 유지
   ctx.drawImage(
     sourceImage,
     cropX,
@@ -646,33 +610,9 @@ function recognizeSelection(left, top, width, height) {
 
   retryButton.disabled = false;
 
-  showLastCrop(canvas);
-
   hideReview();
 
   addTask(canvas);
-
-}
-
-
-// 마지막 선택 영역 미리보기
-function showLastCrop(canvas) {
-
-  lastCrop.width = canvas.width;
-  lastCrop.height = canvas.height;
-
-  const ctx = lastCrop.getContext("2d");
-
-  ctx.clearRect(
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  );
-
-  ctx.drawImage(canvas, 0, 0);
-
-  lastPreview.style.display = "block";
 
 }
 
@@ -771,7 +711,6 @@ function validateResult(response) {
 
   }
 
-  // 수정 2: 신뢰도 60점 미만이어도 결과를 표시
   return {
     accepted: true,
     text,
@@ -837,7 +776,6 @@ async function recognizeAutomatically(canvas, version, selectionId) {
 
   const candidates = [];
 
-  // 1차: 기존 한국어 + 영어 OCR
   const defaultWorker = await getWorker(
     "kor+eng"
   );
@@ -862,7 +800,6 @@ async function recognizeAutomatically(canvas, version, selectionId) {
     language: "kor+eng"
   });
 
-  // 기존 OCR 결과가 충분히 확실하면 그대로 사용
   if (
     defaultCandidate.accepted &&
     defaultCandidate.confidence >= 85
@@ -872,7 +809,6 @@ async function recognizeAutomatically(canvas, version, selectionId) {
 
   }
 
-  // 2차: 일본어 + 영어
   statusEl.textContent =
     "일본어 포함 여부 확인 중...";
 
@@ -896,7 +832,6 @@ async function recognizeAutomatically(canvas, version, selectionId) {
     language: "jpn+eng"
   });
 
-  // 3차: 스페인어 + 포르투갈어 + 영어
   statusEl.textContent =
     "라틴 음악 언어 확인 중...";
 
@@ -1132,8 +1067,6 @@ $("clear").addEventListener("click", () => {
   lastSelection = null;
 
   retryButton.disabled = true;
-
-  lastPreview.style.display = "none";
 
   hideReview();
 
