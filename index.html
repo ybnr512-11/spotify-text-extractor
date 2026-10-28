@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Spotify 곡 목록 추출기</title>
+
+<title>Spotify 텍스트 추출기</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
@@ -14,78 +15,78 @@
 
 body {
   margin: 0;
-  padding: 25px;
+  padding: 30px 20px;
   background: #121212;
-  color: white;
+  color: #ffffff;
   font-family: Arial, sans-serif;
 }
 
 .container {
-  max-width: 1100px;
-  margin: auto;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 h1 {
   color: #1ed760;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 p {
-  color: #bbb;
+  color: #b3b3b3;
   line-height: 1.6;
 }
 
 .box {
   background: #202020;
+  padding: 24px;
   border-radius: 12px;
-  padding: 20px;
   margin-top: 20px;
 }
 
 .upload {
   border: 2px dashed #1ed760;
   border-radius: 10px;
-  padding: 30px;
+  padding: 35px 20px;
   text-align: center;
   cursor: pointer;
+}
+
+.upload:hover {
+  background: #292929;
 }
 
 button {
   background: #1ed760;
   color: #111;
   border: none;
-  border-radius: 7px;
-  padding: 11px 17px;
-  margin: 5px;
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 5px 5px 5px 0;
   font-weight: bold;
   cursor: pointer;
 }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.secondary {
+button.secondary {
   background: #444;
   color: white;
 }
 
-#imageWrap {
-  position: relative;
-  display: none;
-  margin-top: 15px;
-  max-width: 100%;
-  overflow: auto;
-  border: 1px solid #555;
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 
-#canvas {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  cursor: crosshair;
-  touch-action: none;
+textarea {
+  width: 100%;
+  height: 400px;
+  padding: 15px;
+  background: #151515;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 8px;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 #status {
@@ -94,50 +95,16 @@ button:disabled {
   white-space: pre-wrap;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
+#preview {
+  display: none;
+  max-width: 100%;
+  max-height: 250px;
   margin-top: 15px;
-}
-
-th, td {
-  border: 1px solid #444;
-  padding: 10px;
-  text-align: left;
-}
-
-th {
-  background: #333;
-}
-
-td {
-  background: #181818;
-}
-
-td[contenteditable="true"]:focus {
-  outline: 2px solid #1ed760;
-}
-
-.tableWrap {
-  overflow-x: auto;
+  border-radius: 8px;
 }
 
 small {
-  color: #aaa;
-}
-
-#raw {
-  width: 100%;
-  min-height: 110px;
-  background: #151515;
-  color: #ddd;
-  border: 1px solid #555;
-  padding: 10px;
-  resize: vertical;
-}
-
-#file {
-  display: none;
+  color: #999;
 }
 </style>
 </head>
@@ -146,117 +113,83 @@ small {
 
 <div class="container">
 
-<h1>🎵 Spotify 곡 목록 추출기</h1>
-
-<p>
-Spotify 화면을 캡처해서 Ctrl + V로 붙여넣거나
-이미지를 업로드하세요.<br>
-한국어 + 영어 인식 / 곡명 · 아티스트 · 앨범명 추출
-</p>
-
-<div class="box">
-
-  <div class="upload" id="uploadArea">
-    <h3>📋 Ctrl + V로 이미지 붙여넣기</h3>
-    <p>또는 클릭해서 이미지 선택</p>
-    <input type="file" id="file" accept="image/*" multiple>
-  </div>
+  <h1>🎵 Spotify 텍스트 추출기</h1>
 
   <p>
-    <strong>영역 선택 방법</strong><br>
-    이미지에서 곡 목록의 첫 번째 곡부터 마지막 곡까지
-    마우스로 드래그하세요.<br>
-    번호와 추가한 날짜는 선택하지 않는 것이 좋습니다.
+    Spotify 화면을 캡처해서 붙여넣으면
+    한국어와 영어 텍스트를 추출합니다.
   </p>
 
-  <div id="imageWrap">
-    <canvas id="canvas"></canvas>
+  <div class="box">
+
+    <div class="upload" id="uploadArea">
+      <h3>📋 Ctrl + V로 이미지 붙여넣기</h3>
+      <p>또는 클릭해서 이미지 선택</p>
+      <input
+        type="file"
+        id="fileInput"
+        accept="image/*"
+        multiple
+        style="display:none"
+      >
+    </div>
+
+    <img id="preview" alt="이미지 미리보기">
+
+    <div id="status">이미지를 넣어주세요.</div>
+
   </div>
 
-  <div>
-    <button id="recognize">선택 영역 추출</button>
-    <button id="full" class="secondary">전체 이미지 추출</button>
-    <button id="resetSelection" class="secondary">영역 다시 선택</button>
+  <div class="box">
+
+    <h2>추출 결과</h2>
+
+    <button id="copyBtn">📋 전체 복사</button>
+    <button id="clearBtn" class="secondary">초기화</button>
+
+    <p>
+      <small>
+        여러 장을 붙여넣으면 기존 결과 아래에 계속 추가됩니다.
+      </small>
+    </p>
+
+    <textarea
+      id="result"
+      placeholder="추출된 텍스트가 여기에 표시됩니다."
+    ></textarea>
+
   </div>
-
-  <div id="status">이미지를 넣어주세요.</div>
-
-</div>
-
-<div class="box">
-
-  <h2>추출 결과 <span id="count">0곡</span></h2>
-
-  <button id="copy">📋 엑셀용 전체 복사</button>
-  <button id="clear" class="secondary">결과 초기화</button>
-
-  <div class="tableWrap">
-    <table>
-      <thead>
-        <tr>
-          <th>곡명</th>
-          <th>아티스트</th>
-          <th>앨범명</th>
-        </tr>
-      </thead>
-      <tbody id="result"></tbody>
-    </table>
-  </div>
-
-  <p>
-    <small>
-      인식 결과가 틀리면 표의 글자를 클릭해 직접 수정할 수 있습니다.
-    </small>
-  </p>
-
-</div>
-
-<div class="box">
-
-  <h3>OCR 원본 텍스트</h3>
-
-  <p>
-    자동 분류가 잘못됐을 때 실제 인식된 글자를 확인할 수 있습니다.
-  </p>
-
-  <textarea id="raw" readonly></textarea>
-
-</div>
 
 </div>
 
 <script>
 
-const $ = id => document.getElementById(id);
+const uploadArea = document.getElementById("uploadArea");
+const fileInput = document.getElementById("fileInput");
+const preview = document.getElementById("preview");
+const statusEl = document.getElementById("status");
+const resultEl = document.getElementById("result");
+const copyBtn = document.getElementById("copyBtn");
+const clearBtn = document.getElementById("clearBtn");
 
-const canvas = $("canvas");
-const ctx = canvas.getContext("2d");
-
-let image = null;
-let selection = null;
-let dragging = false;
-let start = null;
-let busy = false;
 let worker = null;
+let processing = false;
+let queue = [];
+let generation = 0;
 
-const tracks = [];
-const imageQueue = [];
 
-
-// 파일 업로드
-$("uploadArea").addEventListener("click", e => {
-  if (e.target.id !== "file") {
-    $("file").click();
-  }
+// 파일 선택
+uploadArea.addEventListener("click", () => {
+  fileInput.click();
 });
 
-$("file").addEventListener("change", e => {
-  enqueueImages([...e.target.files]);
-  e.target.value = "";
+fileInput.addEventListener("change", e => {
+  addImages([...e.target.files]);
+  fileInput.value = "";
 });
 
 
-// 이미지 붙여넣기
+// Ctrl + V 이미지 붙여넣기
 document.addEventListener("paste", e => {
 
   const files = [...(e.clipboardData?.items || [])]
@@ -264,483 +197,156 @@ document.addEventListener("paste", e => {
     .map(item => item.getAsFile())
     .filter(Boolean);
 
-  if (files.length) {
+  if (files.length > 0) {
     e.preventDefault();
-    enqueueImages(files);
+    addImages(files);
   }
 
 });
 
 
-// 여러 이미지 대기열
-function enqueueImages(files) {
+// 이미지 대기열 추가
+function addImages(files) {
 
-  const valid = files.filter(
-    file => file.type.startsWith("image/")
+  const images = files.filter(file =>
+    file && file.type.startsWith("image/")
   );
 
-  imageQueue.push(...valid);
+  if (!images.length) return;
 
-  if (!image && imageQueue.length) {
-    loadNextImage();
-  } else {
-    $("status").textContent =
-      `${imageQueue.length}개 이미지 대기 중`;
-  }
+  queue.push(...images);
+
+  processQueue();
+
 }
 
 
-// 다음 이미지
-async function loadNextImage() {
+// OCR 처리
+async function processQueue() {
 
-  if (!imageQueue.length) {
-    image = null;
-    $("imageWrap").style.display = "none";
-    $("status").textContent = "모든 이미지 처리 완료";
-    return;
-  }
+  if (processing) return;
 
-  const file = imageQueue.shift();
+  processing = true;
 
   try {
-
-    image = await createImageBitmap(file);
-
-    canvas.width = image.width;
-    canvas.height = image.height;
-
-    selection = null;
-
-    drawImage();
-
-    $("imageWrap").style.display = "block";
-
-    $("status").textContent =
-      "이미지를 확인하고 곡 목록 영역을 드래그한 뒤 추출하세요.";
-
-  } catch (error) {
-
-    $("status").textContent =
-      "이미지 열기 실패: " + error.message;
-
-  }
-}
-
-
-// 이미지 그리기
-function drawImage() {
-
-  if (!image) return;
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.drawImage(image, 0, 0);
-
-  if (selection) {
-
-    const { x, y, w, h } = selection;
-
-    ctx.fillStyle = "rgba(30,215,96,0.15)";
-    ctx.fillRect(x, y, w, h);
-
-    ctx.strokeStyle = "#1ed760";
-    ctx.lineWidth = Math.max(2, canvas.width / 400);
-    ctx.strokeRect(x, y, w, h);
-
-  }
-
-}
-
-
-// 마우스 좌표
-function point(e) {
-
-  const rect = canvas.getBoundingClientRect();
-
-  return {
-    x: Math.max(0, Math.min(
-      canvas.width,
-      (e.clientX - rect.left) * canvas.width / rect.width
-    )),
-    y: Math.max(0, Math.min(
-      canvas.height,
-      (e.clientY - rect.top) * canvas.height / rect.height
-    ))
-  };
-
-}
-
-
-// 영역 선택
-canvas.addEventListener("pointerdown", e => {
-
-  if (busy) return;
-
-  dragging = true;
-  start = point(e);
-
-  canvas.setPointerCapture(e.pointerId);
-
-});
-
-canvas.addEventListener("pointermove", e => {
-
-  if (!dragging) return;
-
-  const end = point(e);
-
-  selection = {
-    x: Math.min(start.x, end.x),
-    y: Math.min(start.y, end.y),
-    w: Math.abs(end.x - start.x),
-    h: Math.abs(end.y - start.y)
-  };
-
-  drawImage();
-
-});
-
-canvas.addEventListener("pointerup", e => {
-
-  if (!dragging) return;
-
-  dragging = false;
-
-  const end = point(e);
-
-  selection = {
-    x: Math.min(start.x, end.x),
-    y: Math.min(start.y, end.y),
-    w: Math.abs(end.x - start.x),
-    h: Math.abs(end.y - start.y)
-  };
-
-  if (selection.w < 10 || selection.h < 10) {
-    selection = null;
-  }
-
-  drawImage();
-
-});
-
-
-// 영역 초기화
-$("resetSelection").onclick = () => {
-
-  selection = null;
-  drawImage();
-
-};
-
-
-// OCR용 이미지 만들기
-function makeCrop(area) {
-
-  const out = document.createElement("canvas");
-
-  const scale = 2;
-
-  out.width = Math.round(area.w * scale);
-  out.height = Math.round(area.h * scale);
-
-  const c = out.getContext("2d");
-
-  c.fillStyle = "#ffffff";
-  c.fillRect(0, 0, out.width, out.height);
-
-  c.imageSmoothingEnabled = true;
-  c.imageSmoothingQuality = "high";
-
-  c.drawImage(
-    image,
-    area.x, area.y, area.w, area.h,
-    0, 0, out.width, out.height
-  );
-
-  return out;
-}
-
-
-// 텍스트 정리
-function clean(text) {
-  return (text || "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-
-// 표 렌더링
-function render() {
-
-  const body = $("result");
-
-  body.replaceChildren();
-
-  tracks.forEach((track, index) => {
-
-    const tr = document.createElement("tr");
-
-    ["title", "artist", "album"].forEach(key => {
-
-      const td = document.createElement("td");
-
-      td.contentEditable = "true";
-      td.textContent = track[key];
-
-      td.addEventListener("input", () => {
-        tracks[index][key] = td.textContent;
-      });
-
-      tr.appendChild(td);
-
-    });
-
-    body.appendChild(tr);
-
-  });
-
-  $("count").textContent = tracks.length + "곡";
-
-}
-
-
-// OCR 실행
-async function recognize(useSelection) {
-
-  if (busy) return;
-
-  if (!image) {
-    alert("이미지를 먼저 넣어주세요.");
-    return;
-  }
-
-  if (useSelection && !selection) {
-    alert("먼저 곡 목록 영역을 드래그해서 선택하세요.");
-    return;
-  }
-
-  busy = true;
-
-  $("recognize").disabled = true;
-  $("full").disabled = true;
-
-  try {
-
-    $("status").textContent =
-      "한국어 + 영어 OCR 준비 중...";
 
     if (!worker) {
 
+      statusEl.textContent =
+        "한국어 + 영어 OCR 엔진 준비 중...";
+
       worker = await Tesseract.createWorker("kor+eng");
 
-      await worker.setParameters({
-        preserve_interword_spaces: "1"
-      });
-
     }
 
-    const area = useSelection
-      ? selection
-      : {
-          x: 0,
-          y: 0,
-          w: image.width,
-          h: image.height
-        };
+    while (queue.length > 0) {
 
-    const cropped = makeCrop(area);
+      const file = queue.shift();
+      const currentGeneration = generation;
 
-    $("status").textContent =
-      "이미지에서 텍스트 인식 중...";
+      const imageUrl = URL.createObjectURL(file);
 
-    const response = await worker.recognize(cropped);
+      preview.src = imageUrl;
+      preview.style.display = "block";
 
-    const data = response.data;
+      statusEl.textContent =
+        "이미지 인식 중... 남은 이미지 " +
+        queue.length + "장";
 
-    $("raw").value = data.text || "";
+      try {
 
-    // 인식된 줄과 위치
-    const lines = (data.lines || [])
-      .map(line => ({
-        text: clean(line.text),
-        x: (line.bbox.x0 + line.bbox.x1) / 4,
-        y: (line.bbox.y0 + line.bbox.y1) / 4
-      }))
-      .filter(line => line.text);
+        const response = await worker.recognize(file);
 
-    // 위에서 아래로 정렬
-    lines.sort((a, b) => a.y - b.y);
-
-    // 제목·아티스트·앨범 영역 구분
-    const width = cropped.width / 2;
-
-    const titleArea = [];
-    const albumArea = [];
-
-    for (const line of lines) {
-
-      if (line.x < width * 0.56) {
-        titleArea.push(line);
-      } else {
-        albumArea.push(line);
-      }
-
-    }
-
-    // 제목과 아티스트를 세로 위치로 묶기
-    const groups = [];
-
-    for (let i = 0; i < titleArea.length; i++) {
-
-      const current = titleArea[i];
-      const next = titleArea[i + 1];
-
-      let artist = "";
-
-      if (next) {
-
-        const gap = next.y - current.y;
-
-        // 가까운 두 줄을 제목·아티스트로 판단
-        if (gap > 0 && gap < 25) {
-          artist = next.text;
-          i++;
+        if (currentGeneration !== generation) {
+          continue;
         }
 
-      }
+        const text = (response.data.text || "").trim();
 
-      groups.push({
-        title: current.text,
-        artist,
-        y: current.y
-      });
+        if (text) {
 
-    }
+          if (resultEl.value.trim()) {
+            resultEl.value += "\n\n";
+          }
 
-    // 앨범명 연결
-    const used = new Set();
+          resultEl.value += text;
 
-    for (const group of groups) {
+          resultEl.scrollTop = resultEl.scrollHeight;
 
-      let album = "";
-      let bestIndex = -1;
-      let bestDistance = Infinity;
-
-      albumArea.forEach((line, index) => {
-
-        if (used.has(index)) return;
-
-        const distance = Math.abs(line.y - group.y);
-
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestIndex = index;
         }
 
-      });
+      } finally {
 
-      if (bestIndex !== -1 && bestDistance < 30) {
-
-        album = albumArea[bestIndex].text;
-        used.add(bestIndex);
+        URL.revokeObjectURL(imageUrl);
 
       }
 
-      tracks.push({
-        title: group.title,
-        artist: group.artist,
-        album
-      });
-
     }
 
-    render();
-
-    $("status").textContent =
-      `${groups.length}개 항목 인식 완료. 결과를 확인하세요.`;
-
-    image.close();
-    image = null;
-
-    if (imageQueue.length) {
-      await loadNextImage();
-    }
+    statusEl.textContent = "인식 완료!";
 
   } catch (error) {
 
-    $("status").textContent =
-      "OCR 오류: " + error.message;
+    statusEl.textContent =
+      "오류 발생: " + error.message;
 
   } finally {
 
-    busy = false;
+    processing = false;
 
-    $("recognize").disabled = false;
-    $("full").disabled = false;
+    if (queue.length > 0) {
+      processQueue();
+    }
 
   }
 
 }
 
 
-// 선택 영역 추출
-$("recognize").onclick = () => recognize(true);
+// 전체 복사
+copyBtn.addEventListener("click", async () => {
 
-
-// 전체 이미지 추출
-$("full").onclick = () => recognize(false);
-
-
-// 엑셀 복사
-$("copy").onclick = async () => {
-
-  if (!tracks.length) {
-    alert("추출 결과가 없습니다.");
+  if (!resultEl.value.trim()) {
+    alert("복사할 텍스트가 없습니다.");
     return;
   }
 
-  const text = tracks.map(track => {
-
-    return [
-      track.title,
-      track.artist,
-      track.album
-    ].map(value =>
-      (value || "").replace(/[\t\r\n]+/g, " ")
-    ).join("\t");
-
-  }).join("\n");
-
   try {
 
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(resultEl.value);
 
-    $("status").textContent =
-      "복사 완료! 엑셀에 붙여넣으세요.";
+    statusEl.textContent =
+      "복사 완료!";
 
   } catch (error) {
 
-    $("status").textContent =
-      "복사 실패: " + error.message;
+    resultEl.select();
+
+    document.execCommand("copy");
+
+    statusEl.textContent =
+      "복사 완료!";
 
   }
 
-};
+});
 
 
-// 결과 초기화
-$("clear").onclick = () => {
+// 초기화
+clearBtn.addEventListener("click", () => {
 
-  tracks.length = 0;
+  generation++;
 
-  render();
+  queue = [];
 
-  $("raw").value = "";
+  resultEl.value = "";
 
-  $("status").textContent =
-    "추출 결과 초기화 완료";
+  preview.style.display = "none";
 
-};
+  statusEl.textContent =
+    "초기화 완료. 새 이미지를 넣어주세요.";
+
+});
 
 </script>
 
