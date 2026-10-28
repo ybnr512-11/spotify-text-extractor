@@ -69,6 +69,29 @@ button:disabled {
   color: white;
 }
 
+#languageBox {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#languageBox label {
+  color: #ddd;
+  font-size: 14px;
+}
+
+#language {
+  padding: 10px 12px;
+  background: #151515;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 7px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
 #imageContainer {
   position: relative;
   display: none;
@@ -108,7 +131,6 @@ button:disabled {
   margin-top: 15px;
   color: #1ed760;
   white-space: pre-wrap;
-  line-height: 1.6;
 }
 
 #result {
@@ -206,6 +228,29 @@ button:disabled {
     accept="image/*"
   >
 
+  <!-- 추가: OCR 언어 선택 -->
+  <div id="languageBox">
+    <label for="language">🌐 인식 언어</label>
+
+    <select id="language">
+      <option value="kor+eng">
+        기본 (한국어 + 영어)
+      </option>
+
+      <option value="jpn+eng">
+        일본어 (일본어 + 영어)
+      </option>
+
+      <option value="spa+por+eng">
+        라틴 음악 (스페인어 + 포르투갈어 + 영어)
+      </option>
+
+      <option value="kor+eng+jpn+spa+por">
+        전체 언어
+      </option>
+    </select>
+  </div>
+
   <div id="imageContainer">
 
     <img id="sourceImage" alt="캡처 이미지">
@@ -293,8 +338,15 @@ const review = $("review");
 const reviewText = $("reviewText");
 const reviewMessage = $("reviewMessage");
 
+// 추가: 언어 선택
+const languageSelect = $("language");
+
 let worker = null;
 let workerPromise = null;
+
+// 추가: 현재 OCR 엔진의 언어
+let workerLanguage = null;
+let workerLoadingLanguage = null;
 
 let imageURL = null;
 
@@ -529,12 +581,55 @@ selectionLayer.addEventListener("pointercancel", () => {
 });
 
 
+// 추가: 언어 변경 시 기존 결과와 이미지는 유지
+languageSelect.addEventListener("change", () => {
+
+  statusEl.textContent =
+    "인식 언어가 변경되었습니다. 다음 드래그부터 적용됩니다.";
+
+});
+
+
 // OCR 엔진 준비
-async function getWorker() {
+async function getWorker(language) {
 
-  if (worker) return worker;
+  // 같은 언어라면 기존 엔진 재사용
+  if (worker && workerLanguage === language) {
+    return worker;
+  }
 
-  if (workerPromise) return workerPromise;
+  // 같은 언어를 준비 중이라면 기다림
+  if (
+    workerPromise &&
+    workerLoadingLanguage === language
+  ) {
+    return workerPromise;
+  }
+
+  // 이전 엔진 생성 작업이 끝날 때까지 대기
+  if (workerPromise) {
+    try {
+      await workerPromise;
+    } catch (error) {
+      // 실패한 엔진은 아래에서 다시 생성
+    }
+  }
+
+  // 언어가 다르면 기존 엔진 종료
+  if (worker && workerLanguage !== language) {
+
+    await worker.terminate();
+
+    worker = null;
+    workerLanguage = null;
+
+  }
+
+  if (worker && workerLanguage === language) {
+    return worker;
+  }
+
+  workerLoadingLanguage = language;
 
   workerPromise = (async () => {
 
@@ -545,11 +640,12 @@ async function getWorker() {
     }
 
     /*
-      기존 정상 작동 코드의 OCR 설정 유지
+      기존 정상 작동 코드의 OCR 설정 유지.
+      언어만 선택값으로 변경합니다.
     */
 
     const newWorker = await Tesseract.createWorker(
-      "kor+eng"
+      language
     );
 
     await newWorker.setParameters({
@@ -561,6 +657,7 @@ async function getWorker() {
     });
 
     worker = newWorker;
+    workerLanguage = language;
 
     return worker;
 
@@ -573,6 +670,8 @@ async function getWorker() {
   } catch (error) {
 
     workerPromise = null;
+    workerLoadingLanguage = null;
+
     throw error;
 
   }
@@ -610,10 +709,10 @@ function recognizeSelection(left, top, width, height) {
   const ctx = canvas.getContext("2d");
 
   /*
-    기존 코드와 동일한 방식으로 자르기
-    여백 추가 없음
-    확대 없음
-    흑백 변환 없음
+    기존 코드와 동일한 방식으로 자르기.
+    여백 추가 없음.
+    확대 없음.
+    흑백 변환 없음.
   */
 
   ctx.drawImage(
@@ -627,11 +726,6 @@ function recognizeSelection(left, top, width, height) {
     cropWidth,
     cropHeight
   );
-
-  /*
-    마지막 영역을 저장합니다.
-    다시 인식할 때 동일한 이미지를 사용합니다.
-  */
 
   lastSelection = canvas;
 
@@ -674,7 +768,10 @@ function addTask(canvas) {
   tasks.push({
     canvas,
     version: imageVersion,
-    request: ++requestVersion
+    request: ++requestVersion,
+
+    // 추가: 선택 시점의 언어를 저장
+    language: languageSelect.value
   });
 
   statusEl.textContent =
@@ -693,11 +790,6 @@ retryButton.addEventListener("click", () => {
   }
 
   hideReview();
-
-  /*
-    이전에 잘라낸 영역을 그대로 재사용합니다.
-    새로운 이미지 변환은 하지 않습니다.
-  */
 
   addTask(lastSelection);
 
@@ -762,11 +854,6 @@ function validateResult(response) {
     };
 
   }
-
-  /*
-    신뢰도 60 미만은 자동 추가하지 않습니다.
-    이 수치는 정확성 보장이 아닌 검토 기준입니다.
-  */
 
   if (
     Number.isFinite(confidence) &&
@@ -834,8 +921,6 @@ async function processTasks() {
 
   try {
 
-    const ocrWorker = await getWorker();
-
     while (tasks.length) {
 
       const task = tasks.shift();
@@ -843,15 +928,14 @@ async function processTasks() {
       statusEl.textContent =
         "선택한 영역 글자 인식 중...";
 
+      // 추가: 해당 작업에서 선택한 언어로 인식
+      const ocrWorker = await getWorker(
+        task.language
+      );
+
       const response = await ocrWorker.recognize(
         task.canvas
       );
-
-      /*
-        다른 이미지를 불러왔거나
-        더 최근 인식 요청이 있으면
-        오래된 결과는 무시합니다.
-      */
 
       if (
         task.version !== imageVersion ||
