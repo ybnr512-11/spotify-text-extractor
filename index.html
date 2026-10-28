@@ -6,6 +6,8 @@
 
 <title>Spotify 텍스트 추출기</title>
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
 <style>
 * {
   box-sizing: border-box;
@@ -15,35 +17,36 @@ body {
   margin: 0;
   padding: 25px 18px;
   background: #121212;
-  color: white;
+  color: #ffffff;
   font-family: Arial, sans-serif;
 }
 
 main {
-  max-width: 900px;
+  max-width: 950px;
   margin: auto;
 }
 
 h1 {
   color: #1ed760;
+  margin-bottom: 10px;
 }
 
 p {
-  color: #aaa;
+  color: #aaaaaa;
   line-height: 1.6;
 }
 
 .box {
   background: #202020;
-  padding: 22px;
   border-radius: 12px;
+  padding: 22px;
   margin-top: 20px;
 }
 
 #drop {
-  padding: 35px 20px;
   border: 2px dashed #1ed760;
   border-radius: 10px;
+  padding: 35px 20px;
   text-align: center;
   cursor: pointer;
 }
@@ -53,34 +56,28 @@ p {
 }
 
 button {
-  background: #1ed760;
-  color: #111;
-  border: none;
-  border-radius: 8px;
   padding: 12px 18px;
   margin: 5px 5px 5px 0;
+  border: none;
+  border-radius: 8px;
+  background: #1ed760;
+  color: #111111;
   font-weight: bold;
   cursor: pointer;
 }
 
 button.secondary {
-  background: #444;
+  background: #444444;
   color: white;
-}
-
-#status {
-  color: #1ed760;
-  margin-top: 15px;
-  white-space: pre-wrap;
 }
 
 #result {
   width: 100%;
-  height: 450px;
-  padding: 15px;
+  height: 500px;
+  padding: 16px;
   background: #151515;
   color: white;
-  border: 1px solid #555;
+  border: 1px solid #555555;
   border-radius: 8px;
   font-family: Consolas, monospace;
   font-size: 14px;
@@ -88,15 +85,18 @@ button.secondary {
   resize: vertical;
 }
 
+#status {
+  margin-top: 15px;
+  color: #1ed760;
+  white-space: pre-wrap;
+}
+
 #preview {
   display: none;
   max-width: 100%;
-  max-height: 220px;
+  max-height: 250px;
   margin-top: 15px;
-}
-
-small {
-  color: #999;
+  border-radius: 8px;
 }
 </style>
 </head>
@@ -108,8 +108,7 @@ small {
 <h1>🎵 Spotify 텍스트 추출기</h1>
 
 <p>
-Spotify 화면을 캡처해서 Ctrl + V로 붙여넣으세요.<br>
-한국어·영어 텍스트를 추출합니다.
+Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣으세요.
 </p>
 
 <section class="box">
@@ -117,10 +116,17 @@ Spotify 화면을 캡처해서 Ctrl + V로 붙여넣으세요.<br>
   <div id="drop">
     <h3>📋 Ctrl + V로 이미지 붙여넣기</h3>
     <p>또는 클릭해서 이미지 선택</p>
-    <input id="file" type="file" accept="image/*" multiple hidden>
+
+    <input
+      id="file"
+      type="file"
+      accept="image/*"
+      multiple
+      hidden
+    >
   </div>
 
-  <img id="preview" alt="캡처 미리보기">
+  <img id="preview" alt="이미지 미리보기">
 
   <div id="status">이미지를 넣어주세요.</div>
 
@@ -133,12 +139,6 @@ Spotify 화면을 캡처해서 Ctrl + V로 붙여넣으세요.<br>
   <button id="copy">📋 전체 복사</button>
   <button id="clear" class="secondary">초기화</button>
 
-  <p>
-    <small>
-      여러 장을 붙여넣으면 결과가 계속 추가됩니다.
-    </small>
-  </p>
-
   <textarea
     id="result"
     readonly
@@ -150,14 +150,11 @@ Spotify 화면을 캡처해서 Ctrl + V로 붙여넣으세요.<br>
 
 </main>
 
-<script type="module">
-
-import { PaddleOCR } from
-  "https://esm.sh/@paddleocr/paddleocr-js?bundle";
+<script>
 
 const $ = id => document.getElementById(id);
 
-let ocr = null;
+let worker = null;
 let working = false;
 let generation = 0;
 
@@ -165,17 +162,22 @@ const queue = [];
 
 
 // 파일 선택
+
 $("drop").addEventListener("click", () => {
   $("file").click();
 });
 
 $("file").addEventListener("change", e => {
+
   addImages([...e.target.files]);
+
   e.target.value = "";
+
 });
 
 
-// 이미지 붙여넣기
+// Ctrl + V 붙여넣기
+
 document.addEventListener("paste", e => {
 
   const files = [...(e.clipboardData?.items || [])]
@@ -184,18 +186,22 @@ document.addEventListener("paste", e => {
     .filter(Boolean);
 
   if (files.length) {
+
     e.preventDefault();
+
     addImages(files);
+
   }
 
 });
 
 
 // 이미지 추가
+
 function addImages(files) {
 
-  const images = files.filter(
-    file => file && file.type.startsWith("image/")
+  const images = files.filter(file =>
+    file && file.type.startsWith("image/")
   );
 
   if (!images.length) return;
@@ -208,13 +214,15 @@ function addImages(files) {
 
 
 // 이미지 확대
-async function prepareImage(file) {
+// 원본 비율과 색상을 유지합니다.
+
+async function enlargeImage(file) {
 
   const bitmap = await createImageBitmap(file);
 
   try {
 
-    const scale = 2;
+    const scale = 3;
 
     const canvas = document.createElement("canvas");
 
@@ -234,60 +242,30 @@ async function prepareImage(file) {
       canvas.height
     );
 
-    /*
-      원본 이미지 색상은 유지합니다.
-      강제 흑백 변환이나 글자 제거는 하지 않습니다.
-    */
-
     return canvas;
 
   } finally {
+
     bitmap.close();
+
   }
 
 }
 
 
-// OCR 결과 정리
-function getText(result) {
+// OCR 결과에서 텍스트만 가져오기
 
-  const items = result.items || [];
+function extractText(response) {
 
-  /*
-    텍스트의 위치를 이용해 읽는 순서만 정합니다.
-    곡명/아티스트/앨범 분류는 하지 않습니다.
-  */
-
-  const lines = items.map(item => {
-
-    const points = item.poly || [];
-
-    const ys = points.map(point =>
-      Array.isArray(point) ? point[1] : point.y
-    );
-
-    const xs = points.map(point =>
-      Array.isArray(point) ? point[0] : point.x
-    );
-
-    return {
-      text: (item.text || "").trim(),
-      x: xs.length ? Math.min(...xs) : 0,
-      y: ys.length ? Math.min(...ys) : 0
-    };
-
-  }).filter(item => item.text);
-
-  lines.sort((a, b) => {
-    return a.y - b.y || a.x - b.x;
-  });
-
-  return lines.map(line => line.text).join("\n");
+  return (response.data.text || "")
+    .replace(/\r\n/g, "\n")
+    .trim();
 
 }
 
 
 // OCR 실행
+
 async function run() {
 
   if (working) return;
@@ -296,57 +274,96 @@ async function run() {
 
   try {
 
-    if (!ocr) {
+    if (!worker) {
 
       $("status").textContent =
-        "새 OCR 엔진을 불러오는 중입니다.\n" +
-        "처음 실행할 때는 모델 다운로드로 시간이 걸릴 수 있습니다.";
+        "한국어·영어 OCR 엔진 준비 중...";
 
-      ocr = await PaddleOCR.create({
-        lang: "korean",
-        ocrVersion: "PP-OCRv5",
-        ortOptions: {
-          backend: "wasm",
-          numThreads: 1
-        }
+      worker = await Tesseract.createWorker(
+        "kor+eng",
+        1
+      );
+
+      await worker.setParameters({
+
+        tessedit_pageseg_mode: "3",
+
+        preserve_interword_spaces: "1"
+
       });
 
     }
 
-    while (queue.length) {
+    while (queue.length > 0) {
 
       const file = queue.shift();
+
       const currentGeneration = generation;
 
-      const url = URL.createObjectURL(file);
+      const previewURL = URL.createObjectURL(file);
 
-      $("preview").src = url;
+      $("preview").src = previewURL;
       $("preview").style.display = "block";
 
       try {
 
         $("status").textContent =
-          "이미지 분석 중...";
+          "원본 이미지 글자 인식 중...";
 
-        const canvas = await prepareImage(file);
+        // 1. 원본 이미지 인식
 
-        $("status").textContent =
-          "텍스트 인식 중...";
-
-        const results = await ocr.predict(canvas);
+        const originalResult =
+          await worker.recognize(file);
 
         if (currentGeneration !== generation) {
           continue;
         }
 
-        const result = results[0];
+        // 2. 확대 이미지 인식
 
-        const text = getText(result);
+        $("status").textContent =
+          "확대 이미지 글자 인식 중...";
+
+        const enlarged = await enlargeImage(file);
+
+        const enlargedResult =
+          await worker.recognize(enlarged);
+
+        if (currentGeneration !== generation) {
+          continue;
+        }
+
+        // 3. OCR 신뢰도 비교
+
+        const originalConfidence =
+          originalResult.data.confidence || 0;
+
+        const enlargedConfidence =
+          enlargedResult.data.confidence || 0;
+
+        let bestResult;
+
+        if (enlargedConfidence > originalConfidence) {
+
+          bestResult = enlargedResult;
+
+        } else {
+
+          bestResult = originalResult;
+
+        }
+
+        // 4. 글자만 출력
+        // 곡명/아티스트/앨범 분류하지 않음
+
+        const text = extractText(bestResult);
 
         if (text) {
 
           if ($("result").value.trim()) {
+
             $("result").value += "\n\n";
+
           }
 
           $("result").value += text;
@@ -357,12 +374,14 @@ async function run() {
         }
 
         $("status").textContent =
-          "인식 완료! 남은 이미지: " +
-          queue.length + "장";
+          "추출 완료! " +
+          "남은 이미지: " +
+          queue.length +
+          "장";
 
       } finally {
 
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(previewURL);
 
       }
 
@@ -371,7 +390,7 @@ async function run() {
   } catch (error) {
 
     $("status").textContent =
-      "OCR 실행 오류: " + error.message;
+      "오류: " + error.message;
 
     console.error(error);
 
@@ -379,8 +398,10 @@ async function run() {
 
     working = false;
 
-    if (queue.length) {
+    if (queue.length > 0) {
+
       run();
+
     }
 
   }
@@ -389,28 +410,34 @@ async function run() {
 
 
 // 전체 복사
+
 $("copy").addEventListener("click", async () => {
 
   const text = $("result").value;
 
   if (!text.trim()) {
+
     alert("복사할 내용이 없습니다.");
+
     return;
+
   }
 
   try {
 
     await navigator.clipboard.writeText(text);
 
-    $("status").textContent = "복사 완료!";
+    $("status").textContent =
+      "전체 복사 완료!";
 
-  } catch {
+  } catch (error) {
 
     $("result").select();
 
     document.execCommand("copy");
 
-    $("status").textContent = "복사 완료!";
+    $("status").textContent =
+      "전체 복사 완료!";
 
   }
 
@@ -418,6 +445,7 @@ $("copy").addEventListener("click", async () => {
 
 
 // 초기화
+
 $("clear").addEventListener("click", () => {
 
   generation++;
@@ -428,7 +456,8 @@ $("clear").addEventListener("click", () => {
 
   $("preview").style.display = "none";
 
-  $("status").textContent = "초기화 완료";
+  $("status").textContent =
+    "초기화 완료.";
 
 });
 
