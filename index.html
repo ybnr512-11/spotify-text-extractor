@@ -25,10 +25,7 @@ main {
 
 h1 { color: #1ed760; }
 
-p {
-  color: #aaa;
-  line-height: 1.6;
-}
+p { color: #aaa; line-height: 1.6; }
 
 .box {
   background: #202020;
@@ -37,14 +34,20 @@ p {
   margin-top: 20px;
 }
 
-#drop {
+#pasteArea {
   border: 2px dashed #1ed760;
   border-radius: 10px;
   padding: 30px 20px;
   text-align: center;
+  cursor: text;
+  outline: none;
 }
 
-#drop.dragging {
+#pasteArea:focus {
+  background: #292929;
+}
+
+#pasteArea.dragging {
   background: #303030;
 }
 
@@ -76,6 +79,7 @@ button.secondary {
   max-width: 100%;
   max-height: 250px;
   margin-top: 15px;
+  border-radius: 8px;
 }
 
 #status {
@@ -107,18 +111,16 @@ button.secondary {
 
 <h1>🎵 Spotify 텍스트 추출기</h1>
 
-<p>
-Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣거나
-이미지 파일을 선택하세요.
-</p>
+<p>Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣으세요.</p>
 
 <section class="box">
 
-  <div id="drop">
-    <h3>📋 Ctrl + V로 이미지 붙여넣기</h3>
-    <p>또는 이미지 파일 선택</p>
-    <input id="file" type="file" accept="image/*" multiple>
+  <div id="pasteArea" tabindex="0">
+    <h3>📋 여기를 클릭한 뒤 Ctrl + V</h3>
+    <p>또는 이미지를 이 영역에 드래그하세요.</p>
   </div>
+
+  <input id="file" type="file" accept="image/*" multiple>
 
   <img id="preview" alt="이미지 미리보기">
 
@@ -148,7 +150,7 @@ Spotify 화면을 캡처한 뒤 Ctrl + V로 붙여넣거나
 "use strict";
 
 const fileInput = document.getElementById("file");
-const drop = document.getElementById("drop");
+const pasteArea = document.getElementById("pasteArea");
 const preview = document.getElementById("preview");
 const statusEl = document.getElementById("status");
 const resultEl = document.getElementById("result");
@@ -160,6 +162,10 @@ let processing = false;
 let generation = 0;
 let previewURL = null;
 
+// 붙여넣기 영역 클릭 시 키보드 포커스
+pasteArea.addEventListener("click", () => {
+  pasteArea.focus();
+});
 
 // 파일 선택
 fileInput.addEventListener("change", () => {
@@ -167,56 +173,66 @@ fileInput.addEventListener("change", () => {
   fileInput.value = "";
 });
 
-
-// Ctrl + V 붙여넣기
+// 페이지 어디에서든 이미지 붙여넣기
 document.addEventListener("paste", event => {
+  const clipboard = event.clipboardData;
+  if (!clipboard) return;
 
-  const items = Array.from(
-    event.clipboardData?.items || []
-  );
+  const images = [];
 
-  const images = items
-    .filter(item => item.type.startsWith("image/"))
-    .map(item => item.getAsFile())
-    .filter(Boolean);
+  // 클립보드 파일 항목 확인
+  if (clipboard.items) {
+    for (const item of clipboard.items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) images.push(file);
+      }
+    }
+  }
+
+  // items에 이미지가 없으면 files도 확인
+  if (!images.length && clipboard.files) {
+    for (const file of clipboard.files) {
+      if (file.type.startsWith("image/")) {
+        images.push(file);
+      }
+    }
+  }
 
   if (images.length) {
     event.preventDefault();
     addImages(images);
   }
-
 });
-
 
 // 드래그 앤 드롭
-drop.addEventListener("dragover", event => {
+pasteArea.addEventListener("dragover", event => {
   event.preventDefault();
-  drop.classList.add("dragging");
+  pasteArea.classList.add("dragging");
 });
 
-drop.addEventListener("dragleave", () => {
-  drop.classList.remove("dragging");
+pasteArea.addEventListener("dragleave", () => {
+  pasteArea.classList.remove("dragging");
 });
 
-drop.addEventListener("drop", event => {
+pasteArea.addEventListener("drop", event => {
   event.preventDefault();
-  drop.classList.remove("dragging");
-
+  pasteArea.classList.remove("dragging");
   addImages(Array.from(event.dataTransfer.files));
 });
 
-
 // 이미지 추가
 function addImages(files) {
-
   const images = files.filter(file =>
     file && file.type.startsWith("image/")
   );
 
-  if (!images.length) return;
+  if (!images.length) {
+    statusEl.textContent = "이미지 파일을 찾지 못했습니다.";
+    return;
+  }
 
   showPreview(images[0]);
-
   queue.push(...images);
 
   statusEl.textContent =
@@ -225,327 +241,174 @@ function addImages(files) {
   processQueue();
 }
 
-
 // 미리보기
 function showPreview(file) {
-
   if (previewURL) {
     URL.revokeObjectURL(previewURL);
   }
 
   previewURL = URL.createObjectURL(file);
-
   preview.src = previewURL;
   preview.style.display = "block";
 }
 
-
-// OCR 결과에서 텍스트 영역별 추출
+// OCR 영역별 한 줄 출력
 function extractRegions(data) {
-
-  const blocks = data.blocks || [];
-
   const regions = [];
 
-  /*
-    Tesseract가 인식한 텍스트 줄을 사용한다.
-
-    하나의 줄에서 단어 사이에 큰 간격이 있으면
-    서로 다른 텍스트 영역으로 분리한다.
-
-    예:
-    Back To You        Things I Never Said
-
-    출력:
-    Back To You
-    Things I Never Said
-  */
-
-  for (const block of blocks) {
-
+  for (const block of (data.blocks || [])) {
     for (const paragraph of (block.paragraphs || [])) {
-
       for (const line of (paragraph.lines || [])) {
-
         const words = (line.words || [])
-          .filter(word => word.text?.trim())
-          .sort((a, b) =>
-            a.bbox.x0 - b.bbox.x0
-          );
+          .filter(word => word.text?.trim() && word.bbox)
+          .sort((a, b) => a.bbox.x0 - b.bbox.x0);
 
         if (!words.length) continue;
 
-        const heights = words.map(word =>
-          Math.max(
-            1,
-            word.bbox.y1 - word.bbox.y0
-          )
-        );
-
         const averageHeight =
-          heights.reduce((a, b) => a + b, 0) /
-          heights.length;
-
-        /*
-          단어 사이 간격이 글자 높이의
-          1.5배 이상이면 다른 영역으로 판단.
-        */
+          words.reduce((sum, word) =>
+            sum + Math.max(1, word.bbox.y1 - word.bbox.y0), 0
+          ) / words.length;
 
         const gapLimit = averageHeight * 1.5;
-
         let current = [];
         let previous = null;
 
+        function saveRegion() {
+          if (!current.length) return;
+
+          regions.push({
+            text: current.map(w => w.text).join(" ").trim(),
+            x: current[0].bbox.x0,
+            y: Math.min(...current.map(w => w.bbox.y0))
+          });
+
+          current = [];
+        }
+
         for (const word of words) {
-
           if (previous) {
-
-            const gap =
-              word.bbox.x0 - previous.bbox.x1;
-
-            if (gap > gapLimit) {
-
-              if (current.length) {
-
-                regions.push({
-                  text: current
-                    .map(w => w.text)
-                    .join(" ")
-                    .trim(),
-
-                  x: current[0].bbox.x0,
-                  y: Math.min(
-                    ...current.map(w => w.bbox.y0)
-                  )
-                });
-
-              }
-
-              current = [];
-            }
-
+            const gap = word.bbox.x0 - previous.bbox.x1;
+            if (gap > gapLimit) saveRegion();
           }
 
           current.push(word);
           previous = word;
         }
 
-        if (current.length) {
-
-          regions.push({
-            text: current
-              .map(w => w.text)
-              .join(" ")
-              .trim(),
-
-            x: current[0].bbox.x0,
-            y: Math.min(
-              ...current.map(w => w.bbox.y0)
-            )
-          });
-
-        }
-
+        saveRegion();
       }
-
     }
-
   }
 
-  /*
-    화면에서 위쪽 → 아래쪽 순서.
-    같은 높이에서는 왼쪽 → 오른쪽 순서.
-  */
-
   regions.sort((a, b) => {
-
-    const rowDifference = a.y - b.y;
-
-    if (Math.abs(rowDifference) < 10) {
-      return a.x - b.x;
-    }
-
-    return rowDifference;
-
+    if (Math.abs(a.y - b.y) < 10) return a.x - b.x;
+    return a.y - b.y;
   });
 
-  return regions
-    .map(region => region.text)
-    .filter(Boolean)
-    .join("\n");
+  return regions.map(r => r.text).filter(Boolean).join("\n");
 }
-
 
 // OCR 실행
 async function processQueue() {
-
   if (processing) return;
 
   processing = true;
 
   try {
-
     if (typeof Tesseract === "undefined") {
-      throw new Error(
-        "OCR 라이브러리를 불러오지 못했습니다."
-      );
+      throw new Error("OCR 라이브러리를 불러오지 못했습니다.");
     }
 
     if (!worker) {
+      statusEl.textContent = "한국어·영어 OCR 엔진 준비 중...";
 
-      statusEl.textContent =
-        "한국어·영어 OCR 엔진 준비 중...";
-
-      worker = await Tesseract.createWorker(
-        "kor+eng",
-        1
-      );
+      worker = await Tesseract.createWorker("kor+eng", 1);
 
       await worker.setParameters({
-
-        /*
-          자동 페이지 분석
-        */
         tessedit_pageseg_mode: "3",
-
-        /*
-          불필요한 공백 생성 방지
-        */
         preserve_interword_spaces: "0"
-
       });
-
     }
 
     while (queue.length) {
-
       const file = queue.shift();
       const currentGeneration = generation;
 
       showPreview(file);
-
       statusEl.textContent = "글자 인식 중...";
-
-      /*
-        원본 이미지 그대로 인식.
-        자르기, 확대, 흑백 변환 없음.
-        
-        blocks 결과를 명시적으로 요청.
-      */
 
       const response = await worker.recognize(
         file,
         {},
-        {
-          blocks: true,
-          text: true
-        }
+        { blocks: true, text: true }
       );
 
-      if (currentGeneration !== generation) {
-        continue;
-      }
+      if (currentGeneration !== generation) continue;
 
       let text = extractRegions(response.data);
-
-      /*
-        영역 정보가 없으면
-        일반 OCR 텍스트 사용.
-      */
 
       if (!text.trim()) {
         text = (response.data.text || "").trim();
       }
 
       if (text) {
-
-        if (resultEl.value.trim()) {
-          resultEl.value += "\n\n";
-        }
-
+        if (resultEl.value.trim()) resultEl.value += "\n\n";
         resultEl.value += text;
-
-        resultEl.scrollTop =
-          resultEl.scrollHeight;
+        resultEl.scrollTop = resultEl.scrollHeight;
       }
 
       statusEl.textContent =
         `인식 완료! 남은 이미지: ${queue.length}장`;
-
     }
 
   } catch (error) {
-
     console.error(error);
-
-    statusEl.textContent =
-      "OCR 오류: " + error.message;
-
+    statusEl.textContent = "OCR 오류: " + error.message;
     worker = null;
     queue.length = 0;
 
   } finally {
-
     processing = false;
-
   }
-
 }
 
-
 // 전체 복사
-document.getElementById("copy")
-  .addEventListener("click", async () => {
+document.getElementById("copy").addEventListener("click", async () => {
+  if (!resultEl.value.trim()) {
+    alert("복사할 내용이 없습니다.");
+    return;
+  }
 
-    const text = resultEl.value;
-
-    if (!text.trim()) {
-      alert("복사할 내용이 없습니다.");
-      return;
-    }
-
-    try {
-
-      await navigator.clipboard.writeText(text);
-
-      statusEl.textContent = "전체 복사 완료!";
-
-    } catch {
-
-      resultEl.select();
-
-      document.execCommand("copy");
-
-      statusEl.textContent = "전체 복사 완료!";
-
-    }
-
-  });
-
+  try {
+    await navigator.clipboard.writeText(resultEl.value);
+    statusEl.textContent = "전체 복사 완료!";
+  } catch {
+    resultEl.select();
+    const success = document.execCommand("copy");
+    statusEl.textContent = success
+      ? "전체 복사 완료!"
+      : "복사에 실패했습니다.";
+  }
+});
 
 // 초기화
-document.getElementById("clear")
-  .addEventListener("click", () => {
+document.getElementById("clear").addEventListener("click", () => {
+  generation++;
+  queue.length = 0;
+  resultEl.value = "";
+  fileInput.value = "";
 
-    generation++;
+  preview.style.display = "none";
+  preview.removeAttribute("src");
 
-    queue.length = 0;
+  if (previewURL) {
+    URL.revokeObjectURL(previewURL);
+    previewURL = null;
+  }
 
-    resultEl.value = "";
-    fileInput.value = "";
-
-    preview.style.display = "none";
-    preview.removeAttribute("src");
-
-    if (previewURL) {
-      URL.revokeObjectURL(previewURL);
-      previewURL = null;
-    }
-
-    statusEl.textContent = "초기화 완료.";
-
-  });
-
+  statusEl.textContent = "초기화 완료.";
+});
 </script>
 
 </body>
